@@ -40,7 +40,7 @@ src/
   application/     source (Snapshot, Freshness), next_train, line_status
   infrastructure/  http_client, http_freshness, cache, mtr/{next_train, line_status}
   api/             dto, routes, error, http_cache
-  telemetry.rs     console logging
+  telemetry/       console logging, request_blocks (terminal view, one block per request)
 ```
 
 ## Caching and freshness
