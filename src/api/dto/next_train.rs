@@ -3,7 +3,7 @@ use serde::{Serialize, Serializer};
 use crate::{
     api::dto::{
         ErrorDetail,
-        common::{HktTime, LineRef, StationRef},
+        common::{DirectionCode, HktTime, LineRef, StationRef},
     },
     application::next_train::{BoardView, LineBoard, StationBoards},
     domain::{
@@ -78,8 +78,7 @@ pub struct BoardBody<'a> {
     pub stale: bool,
     pub delayed: bool,
     pub alert: Option<AlertBody<'a>>,
-    pub up: Upcoming<'a>,
-    pub down: Upcoming<'a>,
+    pub directions: Directions<'a>,
 }
 
 impl<'a> From<&'a BoardView> for BoardBody<'a> {
@@ -95,20 +94,56 @@ impl<'a> From<&'a BoardView> for BoardBody<'a> {
                 en: (&alert.en).into(),
                 tc: (&alert.tc).into(),
             }),
-            up: Upcoming {
-                view,
-                direction: Direction::Up,
-            },
-            down: Upcoming {
-                view,
-                direction: Direction::Down,
-            },
+            directions: Directions(view),
         }
     }
 }
 
-/// The trains still to come in one direction, serialized straight from the
-/// cached board without an intermediate collection.
+/// The directions a rider can board in, serialized straight from the cached
+/// board without an intermediate collection.
+#[derive(Debug)]
+pub struct Directions<'a>(&'a BoardView);
+
+impl Serialize for Directions<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let view = self.0;
+        serializer.collect_seq(view.directions().map(|direction| DirectionBody {
+            direction: DirectionCode(direction),
+            towards: Towards { view, direction },
+            trains: Upcoming { view, direction },
+        }))
+    }
+}
+
+/// One direction at a station: where it heads and the trains still to come.
+#[derive(Debug, Serialize)]
+pub struct DirectionBody<'a> {
+    pub direction: DirectionCode,
+    /// The termini beyond this station, as platform signs name them.
+    pub towards: Towards<'a>,
+    pub trains: Upcoming<'a>,
+}
+
+/// The termini a direction leads to from the board's station.
+#[derive(Debug)]
+pub struct Towards<'a> {
+    view: &'a BoardView,
+    direction: Direction,
+}
+
+impl Serialize for Towards<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let board = self.view.board();
+        serializer.collect_seq(
+            board
+                .line
+                .towards(board.station, self.direction)
+                .map(StationRef::from),
+        )
+    }
+}
+
+/// The trains still to come in one direction.
 #[derive(Debug)]
 pub struct Upcoming<'a> {
     view: &'a BoardView,
@@ -121,9 +156,10 @@ impl Serialize for Upcoming<'_> {
     }
 }
 
+/// One upcoming train. Trains are listed in the order they are due, so no
+/// separate sequence number is exposed.
 #[derive(Debug, Serialize)]
 pub struct TrainBody<'a> {
-    pub sequence: u8,
     pub destination: StationRef<'a>,
     pub platform: u8,
     /// Estimated arrival, or departure when `time_type` is `departure`.
@@ -138,7 +174,6 @@ pub struct TrainBody<'a> {
 impl<'a> From<&'a TrainArrival> for TrainBody<'a> {
     fn from(train: &'a TrainArrival) -> Self {
         Self {
-            sequence: train.sequence,
             destination: (&train.destination).into(),
             platform: train.platform,
             arrival_at: HktTime(train.arrival_at),

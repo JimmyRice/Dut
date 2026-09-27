@@ -81,6 +81,18 @@ impl NextTrainBoard {
             .iter()
             .filter(move |train| !train.has_departed(as_of))
     }
+
+    /// Directions a rider can board in at this station as of `as_of`.
+    ///
+    /// A direction is shown while it leads to a terminus beyond the station,
+    /// so Po Lam has no board towards Po Lam. It is also shown whenever the
+    /// MTR reports trains in it, so no train is hidden by the static network.
+    pub fn directions(&self, as_of: Timestamp) -> impl Iterator<Item = Direction> + '_ {
+        Direction::ALL.into_iter().filter(move |&direction| {
+            self.line.towards(self.station, direction).next().is_some()
+                || self.upcoming(direction, as_of).next().is_some()
+        })
+    }
 }
 
 #[cfg(test)]
@@ -113,19 +125,26 @@ mod tests {
         assert!(train.has_departed(arrival_at + DEPARTED_GRACE + SignedDuration::from_secs(1)));
     }
 
-    #[test]
-    fn upcoming_skips_departed_trains_in_the_requested_direction() {
-        let board = NextTrainBoard {
+    fn board(station: &str, trains: ByDirection<Vec<TrainArrival>>) -> NextTrainBoard {
+        NextTrainBoard {
             line: Line::TseungKwanO,
-            station: "TKO".parse().expect("test station code should be valid"),
+            station: station.parse().expect("test station code should be valid"),
             generated_at: timestamp(0),
             delayed: false,
             alert: None,
-            trains: ByDirection::new(
+            trains,
+        }
+    }
+
+    #[test]
+    fn upcoming_skips_departed_trains_in_the_requested_direction() {
+        let board = board(
+            "TKO",
+            ByDirection::new(
                 vec![train(1, timestamp(100)), train(2, timestamp(400))],
                 vec![train(1, timestamp(500))],
             ),
-        };
+        );
 
         let upcoming: Vec<u8> = board
             .upcoming(Direction::Up, timestamp(300))
@@ -133,5 +152,35 @@ mod tests {
             .collect();
 
         assert_eq!(upcoming, [2]);
+    }
+
+    #[test]
+    fn a_mid_line_station_shows_both_directions_even_without_trains() {
+        let board = board("TKO", ByDirection::default());
+
+        let directions: Vec<Direction> = board.directions(timestamp(0)).collect();
+
+        assert_eq!(directions, [Direction::Up, Direction::Down]);
+    }
+
+    #[test]
+    fn a_terminus_leaves_out_the_direction_that_ends_there() {
+        let board = board("POA", ByDirection::default());
+
+        let directions: Vec<Direction> = board.directions(timestamp(0)).collect();
+
+        assert_eq!(directions, [Direction::Down]);
+    }
+
+    #[test]
+    fn a_direction_with_upcoming_trains_is_never_left_out() {
+        let arriving = train(1, timestamp(100));
+        let board = board("POA", ByDirection::new(vec![arriving], Vec::new()));
+
+        let before: Vec<Direction> = board.directions(timestamp(0)).collect();
+        let after: Vec<Direction> = board.directions(timestamp(200)).collect();
+
+        assert_eq!(before, [Direction::Up, Direction::Down]);
+        assert_eq!(after, [Direction::Down]);
     }
 }

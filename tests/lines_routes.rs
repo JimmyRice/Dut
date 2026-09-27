@@ -46,11 +46,24 @@ async fn lines_describe_the_static_network() {
                 { "code": "SUN", "name": { "en": "Sunny Bay", "tc": "欣澳" } },
                 { "code": "DIS", "name": { "en": "Disneyland Resort", "tc": "迪士尼" } },
             ],
-            "destinations": {
-                "up": [{ "code": "SUN", "name": { "en": "Sunny Bay", "tc": "欣澳" } }],
-                "down": [{ "code": "DIS", "name": { "en": "Disneyland Resort", "tc": "迪士尼" } }],
-            },
+            "directions": [
+                {
+                    "direction": "up",
+                    "towards": [{ "code": "SUN", "name": { "en": "Sunny Bay", "tc": "欣澳" } }],
+                },
+                {
+                    "direction": "down",
+                    "towards": [{ "code": "DIS", "name": { "en": "Disneyland Resort", "tc": "迪士尼" } }],
+                },
+            ],
         })
     );
     assert_eq!(lines[3]["stations"].as_array().map(Vec::len), Some(8));
+    assert_eq!(
+        lines[3]["directions"][0]["towards"],
+        json!([
+            { "code": "POA", "name": { "en": "Po Lam", "tc": "寶琳" } },
+            { "code": "LHP", "name": { "en": "LOHAS Park", "tc": "康城" } },
+        ])
+    );
 }

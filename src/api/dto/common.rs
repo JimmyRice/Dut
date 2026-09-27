@@ -8,7 +8,7 @@ use serde::{Serialize, Serializer};
 
 use crate::domain::{
     localized::Localized,
-    network::{Line, Station, StationCode},
+    network::{Direction, Line, Station, StationCode},
     time::HONG_KONG,
 };
 
@@ -57,6 +57,22 @@ impl<'a> From<&'a StationCode> for StationRef<'a> {
             code: code.as_str(),
             name: Station::find(*code).map(|station| station.name.into()),
         }
+    }
+}
+
+/// A running direction as its stable identifier, `up` or `down`.
+///
+/// The identifiers match the MTR's so clients can remember a rider's usual
+/// direction; the accompanying `towards` is what riders should be shown.
+#[derive(Clone, Copy, Debug)]
+pub struct DirectionCode(pub Direction);
+
+impl Serialize for DirectionCode {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(match self.0 {
+            Direction::Up => "up",
+            Direction::Down => "down",
+        })
     }
 }
 
