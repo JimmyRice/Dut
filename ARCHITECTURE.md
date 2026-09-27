@@ -102,6 +102,7 @@ move the cache behind a shared store.
    service invocation, and response mapping.
 6. Add route-level integration tests under `tests` and unit tests beside
    non-trivial domain or application logic.
+7. Document the endpoint in `api.md`, and record the change in its changelog.
 
 Do not introduce repository or service abstractions without a real consumer.
 The layer and dependency direction are fixed, while individual abstractions
