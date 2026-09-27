@@ -1,10 +1,10 @@
+mod api;
+mod application;
 mod bootstrap;
+mod domain;
+mod infrastructure;
+mod state;
 
-pub mod api;
-pub mod application;
-pub mod domain;
-pub mod infrastructure;
-pub mod state;
 pub mod telemetry;
 
-pub use bootstrap::{AppConfig, MtrConfig, StartupError, build_app, run};
+pub use bootstrap::{AppConfig, StartupError, build_app, run};

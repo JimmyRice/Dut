@@ -4,6 +4,7 @@ use tracing::info;
 use super::{AppConfig, StartupError, build_app};
 use crate::telemetry::millis;
 
+/// Serves the application on the configured address until the server fails.
 pub async fn run(config: AppConfig) -> Result<(), StartupError> {
     let mtr = config.mtr();
     info!(

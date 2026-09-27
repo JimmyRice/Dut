@@ -61,10 +61,6 @@ impl BoardView {
         &self.snapshot
     }
 
-    pub const fn as_of(&self) -> Timestamp {
-        self.as_of
-    }
-
     pub fn upcoming(&self, direction: Direction) -> impl Iterator<Item = &TrainArrival> {
         self.board().upcoming(direction, self.as_of)
     }

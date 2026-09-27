@@ -6,7 +6,7 @@ mod config;
 mod error;
 mod server;
 
-pub use config::{AppConfig, MtrConfig};
+pub use config::AppConfig;
 pub use error::StartupError;
 pub use server::run;
 
@@ -23,6 +23,9 @@ use crate::{
     state::AppState,
 };
 
+/// Builds the complete HTTP application, constructing every concrete
+/// dependency once. Tests call it directly to get a router without binding a
+/// socket.
 pub fn build_app(config: &AppConfig) -> Result<Router, StartupError> {
     let outbound_http =
         http_client::build(config.outbound_http_timeout()).map_err(StartupError::HttpClient)?;

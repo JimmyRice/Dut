@@ -36,6 +36,8 @@ const LINE_STATUS_CACHE: CachePolicy = CachePolicy {
     failure_backoff: Duration::from_secs(10),
 };
 
+/// Settings for one server process. The default listens on localhost and
+/// reads the live MTR feeds; tests swap the endpoints for a fake upstream.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AppConfig {
     bind_address: SocketAddr,
@@ -54,7 +56,7 @@ pub struct MtrConfig {
 }
 
 impl AppConfig {
-    pub const fn new(
+    const fn new(
         bind_address: SocketAddr,
         outbound_http_timeout: Duration,
         mtr: MtrConfig,
@@ -78,15 +80,15 @@ impl AppConfig {
         self
     }
 
-    pub const fn bind_address(&self) -> SocketAddr {
+    pub(crate) const fn bind_address(&self) -> SocketAddr {
         self.bind_address
     }
 
-    pub const fn outbound_http_timeout(&self) -> Duration {
+    pub(crate) const fn outbound_http_timeout(&self) -> Duration {
         self.outbound_http_timeout
     }
 
-    pub const fn mtr(&self) -> &MtrConfig {
+    pub(crate) const fn mtr(&self) -> &MtrConfig {
         &self.mtr
     }
 }

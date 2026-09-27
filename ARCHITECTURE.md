@@ -50,6 +50,11 @@ src/
   lib.rs, main.rs  crate root and process entry point
 ```
 
+The library exports only what `main` and the route tests use: `AppConfig`,
+`build_app`, `run`, `StartupError`, and `telemetry::init`. Every layer is a
+private module, so the compiler reports code that nothing uses. Keep them
+private and export an item only when a caller outside the crate needs it.
+
 ## Caching and freshness
 
 Upstream feeds are read through `infrastructure::cache::RefreshingCache`, a
