@@ -112,6 +112,50 @@ docker buildx build --platform linux/amd64,linux/arm64 -t dut .
 
 镜像里没有 `curl`，所以没有 `HEALTHCHECK`。要做健康检查，可以让编排系统直接请求 `/api/lines`，这个接口不访问上游。
 
+构建好的镜像发布在 GitHub Container Registry，同时提供 amd64 和 arm64 版本。仓库是私有的，拉取前需要先用有 `read:packages` 权限的 token 执行 `docker login ghcr.io`：
+
+```bash
+docker run --rm -p 3000:3000 ghcr.io/jimmyrice/dut:latest
+```
+
+## 发布
+
+先把 `Cargo.toml` 里的 `version` 改成新版本并提交，再推送同名 tag：
+
+```bash
+git tag v0.2.0
+```
+
+```bash
+git push origin v0.2.0
+```
+
+tag 必须是 `v` 加上 `Cargo.toml` 里的版本号，不一致时发布会在编译前失败。推送后 GitHub Actions 会做两件事：
+
+- [release.yml](.github/workflows/release.yml)：编译 6 个平台的二进制文件，和 `SHA256SUMS` 一起发布到 GitHub Releases。tag 里带 `-`（例如 `v0.2.0-rc.1`）时标记为预发布版本。
+- [docker.yml](.github/workflows/docker.yml)：构建镜像并推送到 `ghcr.io/jimmyrice/dut`，标签为 `0.2.0`、`0.2` 和 `latest`，1.0 之后还会加上主版本号标签，预发布版本不更新 `latest`。另外，`master` 上改动了代码或 Dockerfile 的提交会更新 `edge` 标签。
+
+| 系统 | 架构 | 文件 |
+|---|---|---|
+| Linux（任何发行版） | x86-64 | `dut-x86_64-unknown-linux-musl.tar.gz` |
+| Linux（任何发行版） | arm64 | `dut-aarch64-unknown-linux-musl.tar.gz` |
+| macOS | Apple 芯片 | `dut-aarch64-apple-darwin.tar.gz` |
+| macOS | Intel | `dut-x86_64-apple-darwin.tar.gz` |
+| Windows | x86-64 | `dut-x86_64-pc-windows-msvc.zip` |
+| Windows | arm64 | `dut-aarch64-pc-windows-msvc.zip` |
+
+Linux 版本是完全静态链接的 musl 程序，不依赖 glibc，在正常安装的发行版上可以直接运行。只有一种情况需要注意：把它放进自己用精简基础镜像（例如 `debian:13-slim`）构建的容器里运行时，要先安装 `ca-certificates`。程序用系统自带的 CA 证书验证港铁接口的 HTTPS 连接，精简镜像里没有这些证书，启动时会报 `No CA certificates were loaded from the system` 并退出。项目自己的镜像已经带了 CA 证书，不受影响。证书不在标准位置时，可以用环境变量 `SSL_CERT_FILE` 指定证书文件。
+
+Windows 版本静态链接了 C 运行时，不需要安装 Visual C++ Redistributable。
+
+在 Actions 页面手动运行 Release 工作流，会编译同样的 6 个文件，但只保存为工作流的 artifact，不创建 release，适合在打 tag 前检查工作流的改动。
+
+仓库公开后，二进制文件和镜像会附带 GitHub 签名的构建来源证明（artifact attestation），可以这样验证：
+
+```bash
+gh attestation verify dut-x86_64-unknown-linux-musl.tar.gz -R JimmyRice/Dut
+```
+
 ## 日志
 
 - **日志级别**：用 `RUST_LOG` 设置，默认值是 `info,dut=debug,tower_http=debug`，会输出缓存命中等调试信息。想安静一些可以用 `RUST_LOG=info cargo run`。
