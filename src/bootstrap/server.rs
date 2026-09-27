@@ -1,7 +1,8 @@
 use tokio::net::TcpListener;
 use tracing::info;
 
-use crate::{AppConfig, StartupError, build_app, infrastructure::millis};
+use super::{AppConfig, StartupError, build_app};
+use crate::telemetry::millis;
 
 pub async fn run(config: AppConfig) -> Result<(), StartupError> {
     let mtr = config.mtr();

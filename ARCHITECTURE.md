@@ -12,13 +12,17 @@ application and domain layers, never the reverse.
   must not contain HTTP handlers or concrete external I/O.
 - `infrastructure`: Concrete outbound adapters such as HTTP clients, MTR API
   clients, caches, and repositories.
-- `api`: Axum routes, request/response DTOs, validation, and the mapping from
-  application results to HTTP responses.
+- `api`: Axum routes, request/response DTOs, validation, request ID and
+  tracing middleware, and the mapping from application results to HTTP
+  responses.
 - `state`: Dependencies shared by handlers. Services and infrastructure are
-  constructed once and cloned through Axum state.
-- `bootstrap`: The composition root. It creates infrastructure and services,
-  assembles `AppState`, and builds the application.
-- `app` and `server`: Top-level router assembly and network serving.
+  constructed once and cloned through Axum state. It sits outside `bootstrap`
+  because `api` reads it and `bootstrap` builds it.
+- `bootstrap`: The composition root and process lifecycle. It holds the
+  configuration and startup errors, creates infrastructure and services,
+  assembles `AppState`, builds the application, and serves it.
+- `telemetry`: Log output and log-field conventions shared by every layer. It
+  depends on no other module in the crate.
 
 ## Request flow
 
@@ -39,8 +43,11 @@ src/
   domain/          network (lines, stations), next_train, line_status, time
   application/     source (Snapshot, Freshness), next_train, line_status
   infrastructure/  http_client, http_freshness, cache, mtr/{next_train, line_status}
-  api/             dto, routes, error, http_cache
+  api/             dto, routes, error, http_cache, middleware
+  bootstrap/       config, error (StartupError), server
   telemetry/       console logging, request_blocks (terminal view, one block per request)
+  state.rs         AppState
+  lib.rs, main.rs  crate root and process entry point
 ```
 
 ## Caching and freshness

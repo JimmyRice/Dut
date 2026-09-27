@@ -33,7 +33,7 @@ use tracing::{Instrument, Span, debug, error, info, info_span, warn};
 
 use crate::{
     application::source::{Freshness, Snapshot},
-    infrastructure::millis,
+    telemetry::millis,
 };
 
 /// How a [`RefreshingCache`] treats age and upstream failures.

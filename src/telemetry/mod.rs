@@ -5,12 +5,16 @@ mod request_blocks;
 use std::{
     env,
     io::{self, IsTerminal},
+    time::Duration,
 };
 
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{
+    EnvFilter,
+    layer::SubscriberExt,
+    util::{SubscriberInitExt, TryInitError},
+};
 
 use self::request_blocks::RequestBlocks;
-use crate::StartupError;
 
 pub(crate) use self::request_blocks::REQUEST_SPAN;
 
@@ -24,8 +28,8 @@ const DEFAULT_FILTER: &str = "info,dut=debug,tower_http=debug";
 /// "started processing request" to "end of stream", with a summary line and
 /// a blank line around it. Anything else, such as a file or a log collector,
 /// gets one uncoloured line per event, as it happens, so it stays greppable.
-pub fn init() -> Result<(), StartupError> {
-    let installed = if io::stdout().is_terminal() {
+pub fn init() -> Result<(), TryInitError> {
+    if io::stdout().is_terminal() {
         tracing_subscriber::registry()
             .with(filter())
             .with(RequestBlocks::new(io::stdout, colour_wanted()))
@@ -36,8 +40,12 @@ pub fn init() -> Result<(), StartupError> {
             .with_ansi(false)
             .finish()
             .try_init()
-    };
-    installed.map_err(StartupError::Telemetry)
+    }
+}
+
+/// A duration as whole milliseconds, the unit used in every log field.
+pub(crate) fn millis(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
 fn filter() -> EnvFilter {

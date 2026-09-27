@@ -16,7 +16,7 @@ use thiserror::Error;
 use tokio::time::Instant;
 use tracing::{Instrument, error, info, info_span, warn};
 
-use crate::infrastructure::{http_freshness, millis};
+use crate::{infrastructure::http_freshness, telemetry::millis};
 
 /// How many bytes of an undecodable body to include in logs.
 const BODY_EXCERPT_BYTES: usize = 200;

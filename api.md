@@ -24,7 +24,7 @@ Dut 是 MTRGo App 的数据整合后端。本文档记录全部对外 HTTP 接�
 
 | 项目 | 说明 |
 |---|---|
-| Base URL | `http://127.0.0.1:3000`（本地默认值，见 `src/config.rs`） |
+| Base URL | `http://127.0.0.1:3000`（本地默认值，见 `src/bootstrap/config.rs`） |
 | 路径前缀 | 所有接口都在 `/api` 下 |
 | HTTP 方法 | 目前只有 `GET` |
 | 鉴权 | 暂无 |

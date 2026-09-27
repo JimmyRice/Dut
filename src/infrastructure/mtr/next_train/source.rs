@@ -19,9 +19,9 @@ use crate::{
     infrastructure::{
         cache::{CachePolicy, Fetched, RefreshingCache},
         http_client::{OutboundHttpClient, UpstreamError, UpstreamRequest, UpstreamResponse},
-        millis,
         mtr::next_train::dto::{Schedule, ScheduleDataError, ScheduleResponse},
     },
+    telemetry::millis,
 };
 
 const UPSTREAM: &str = "mtr.next_train";
