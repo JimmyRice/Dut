@@ -90,6 +90,8 @@ curl http://127.0.0.1:3000/api/lines/TKL/stations/TKO/next-trains
 
 港铁接口地址、超时和缓存策略都是 [src/bootstrap/config.rs](src/bootstrap/config.rs) 里的默认值，修改后重新编译即可。
 
+服务收到 `SIGTERM` 或 Ctrl-C 后不再接受新请求，等正在处理的请求完成后退出。
+
 ## 日志
 
 - **日志级别**：用 `RUST_LOG` 设置，默认值是 `info,dut=debug,tower_http=debug`，会输出缓存命中等调试信息。想安静一些可以用 `RUST_LOG=info cargo run`。
