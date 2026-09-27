@@ -12,17 +12,16 @@ use tower_http::{
 };
 use tracing::{Level, Span, field, info_span};
 
-use crate::{api, infrastructure::millis, state::AppState, telemetry::REQUEST_SPAN};
+use crate::telemetry::{REQUEST_SPAN, millis};
 
 const REQUEST_ID_HEADER: &str = "x-request-id";
 
-pub(crate) fn build_router(state: AppState) -> Router {
+/// Gives every request an ID, echoes it on the response, and traces the
+/// request inside a span that carries it.
+pub(super) fn with_request_tracing(router: Router) -> Router {
     // Layers run outermost-last: the request ID is assigned first, so the
     // trace span can include it, and it is echoed back on the response.
-    Router::new()
-        .nest("/api", api::router())
-        .fallback(api::not_found)
-        .with_state(state)
+    router
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(
             TraceLayer::new_for_http()

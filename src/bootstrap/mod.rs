@@ -1,8 +1,20 @@
+//! The composition root and process lifecycle: configuration, construction
+//! of every concrete dependency, and serving the result. Nothing else in the
+//! crate builds infrastructure.
+
+mod config;
+mod error;
+mod server;
+
+pub use config::{AppConfig, MtrConfig};
+pub use error::StartupError;
+pub use server::run;
+
 use axum::Router;
 use reqwest::Url;
 
 use crate::{
-    AppConfig, StartupError, app,
+    api,
     application::{line_status::LineStatusService, next_train::NextTrainService},
     infrastructure::{
         http_client,
@@ -34,7 +46,7 @@ pub fn build_app(config: &AppConfig) -> Result<Router, StartupError> {
         LineStatusService::new(line_status),
     );
 
-    Ok(app::build_router(state))
+    Ok(api::router(state))
 }
 
 fn parse_endpoint(name: &'static str, value: &str) -> Result<Url, StartupError> {

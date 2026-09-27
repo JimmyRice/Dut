@@ -5,7 +5,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum StartupError {
     #[error("failed to install the log subscriber: {0}")]
-    Telemetry(#[source] tracing_subscriber::util::TryInitError),
+    Telemetry(#[from] tracing_subscriber::util::TryInitError),
 
     #[error("failed to build the outbound HTTP client: {0}")]
     HttpClient(#[source] reqwest::Error),
