@@ -28,9 +28,6 @@ pub enum ApiError {
 
     #[error("an upstream service is unavailable")]
     UpstreamUnavailable,
-
-    #[error("an internal server error occurred")]
-    Internal,
 }
 
 impl ApiError {
@@ -53,7 +50,6 @@ impl ApiError {
             | Self::UnknownStation
             | Self::StationNotOnLine => StatusCode::NOT_FOUND,
             Self::UpstreamUnavailable => StatusCode::BAD_GATEWAY,
-            Self::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
@@ -64,7 +60,6 @@ impl ApiError {
             Self::UnknownStation => "unknown_station",
             Self::StationNotOnLine => "station_not_on_line",
             Self::UpstreamUnavailable => "upstream_unavailable",
-            Self::Internal => "internal_error",
         }
     }
 
@@ -77,7 +72,6 @@ impl ApiError {
                 "The requested line does not serve the requested station".to_owned()
             }
             Self::UpstreamUnavailable => "An upstream service is unavailable".to_owned(),
-            Self::Internal => "An internal server error occurred".to_owned(),
         }
     }
 }

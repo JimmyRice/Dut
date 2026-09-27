@@ -618,7 +618,6 @@ curl http://127.0.0.1:3000/api/stations/ADM/next-trains
 | `404` | `unknown_station` | 车站代码格式错误或车站不存在 |
 | `404` | `station_not_on_line` | 线路不经过该车站 |
 | `502` | `upstream_unavailable` | 上游数据源（港铁）不可用，且没有可用的旧数据 |
-| `500` | `internal_error` | 服务内部错误 |
 
 错误响应里的 `message` 不会回显客户端输入，也不会包含上游错误细节。上游错误的完整信息只记录在服务端日志里，用 `x-request-id` 查找。
 
@@ -663,5 +662,6 @@ curl http://127.0.0.1:3000/api/stations/ADM/next-trains
 
 | 日期 | 变更 |
 |---|---|
+| 2026-09-28 | 文档修正：错误码表移除 `500 internal_error`。服务从未返回过这个错误码，客户端行为不受影响。 |
 | 2026-09-28 | **不兼容变更。** 列车到站接口（`GET /api/lines/{line}/stations/{station}/next-trains`、`GET /api/stations/{station}/next-trains`）的 `up` / `down` 数组改为 `directions` 数组，每个方向带 `direction`、`towards`、`trains`；本站是某方向终点时不再返回该方向；列车移除 `sequence`，改以数组顺序表示先后。`GET /api/lines` 的 `destinations` 改为 `directions`，`towards` 只列月台指示牌上的主要终点。 |
 | 2026-09-28 | 首版。新增 `GET /api/lines`、`GET /api/lines/status`、`GET /api/lines/{line}/stations/{station}/next-trains`、`GET /api/stations/{station}/next-trains`。移除 Hello 示例接口 `GET /api/hello`、`GET /api/hello.json`。 |
