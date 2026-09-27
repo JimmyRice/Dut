@@ -1,7 +1,4 @@
 //! Shared helpers for route-level tests.
-//!
-//! Each test binary uses a different subset of these helpers.
-#![allow(dead_code)]
 
 use axum::{
     Router,

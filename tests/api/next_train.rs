@@ -1,8 +1,6 @@
-mod support;
-
+use crate::support::{Moment, NEXT_TRAIN_PATH, TestApp, Train, schedule_body};
 use axum::http::{StatusCode, header};
 use serde_json::{Value, json};
-use support::{Moment, NEXT_TRAIN_PATH, TestApp, Train, schedule_body};
 use wiremock::{
     Mock, ResponseTemplate,
     matchers::{any, method, path, query_param},
