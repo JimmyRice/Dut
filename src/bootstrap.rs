@@ -3,9 +3,7 @@ use reqwest::Url;
 
 use crate::{
     AppConfig, StartupError, app,
-    application::{
-        hello::HelloService, line_status::LineStatusService, next_train::NextTrainService,
-    },
+    application::{line_status::LineStatusService, next_train::NextTrainService},
     infrastructure::{
         http_client,
         mtr::{line_status::MtrLineStatusSource, next_train::MtrNextTrainSource},
@@ -32,7 +30,6 @@ pub fn build_app(config: &AppConfig) -> Result<Router, StartupError> {
     );
 
     let state = AppState::new(
-        HelloService,
         NextTrainService::new(next_trains),
         LineStatusService::new(line_status),
     );

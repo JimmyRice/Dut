@@ -1,4 +1,3 @@
-pub mod greeting;
 pub mod line_status;
 pub mod localized;
 pub mod network;
