@@ -1,8 +1,6 @@
-mod support;
-
+use crate::support::TestApp;
 use axum::http::{StatusCode, header};
 use serde_json::json;
-use support::TestApp;
 use wiremock::{Mock, ResponseTemplate, matchers::any};
 
 #[tokio::test]

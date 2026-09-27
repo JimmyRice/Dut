@@ -1,8 +1,6 @@
-mod support;
-
+use crate::support::{LINE_STATUS_PATH, TestApp, line_status_fixture};
 use axum::http::StatusCode;
 use serde_json::{Value, json};
-use support::{LINE_STATUS_PATH, TestApp, line_status_fixture};
 use wiremock::{
     Mock, ResponseTemplate,
     matchers::{method, path},

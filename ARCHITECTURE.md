@@ -107,8 +107,9 @@ move the cache behind a shared store.
    `AppState`.
 5. Add DTOs and handlers under `api`, keeping handlers limited to extraction,
    service invocation, and response mapping.
-6. Add route-level integration tests under `tests` and unit tests beside
-   non-trivial domain or application logic.
+6. Add route-level integration tests as a module of `tests/api`, which builds
+   a single test binary, and unit tests beside non-trivial domain or
+   application logic.
 7. Document the endpoint in `api.md`, and record the change in its changelog.
 
 Do not introduce repository or service abstractions without a real consumer.

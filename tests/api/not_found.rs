@@ -1,8 +1,6 @@
-mod support;
-
+use crate::support::TestApp;
 use axum::http::StatusCode;
 use serde_json::json;
-use support::TestApp;
 
 #[tokio::test]
 async fn unknown_route_returns_structured_json_error() {
