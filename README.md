@@ -84,7 +84,11 @@ curl http://127.0.0.1:3000/api/lines/TKL/stations/TKO/next-trains
 
 ## 配置
 
-目前没有环境变量或命令行参数。监听地址、港铁接口地址、超时和缓存策略都是 [src/bootstrap/config.rs](src/bootstrap/config.rs) 里的默认值，修改后重新编译即可。
+| 环境变量 | 默认值 | 作用 |
+|---|---|---|
+| `DUT_BIND_ADDRESS` | `127.0.0.1:3000` | 监听的 IP 和端口，例如 `0.0.0.0:3000` 或 `[::]:3000`。只能写 IP，不能写主机名 |
+
+港铁接口地址、超时和缓存策略都是 [src/bootstrap/config.rs](src/bootstrap/config.rs) 里的默认值，修改后重新编译即可。
 
 ## 日志
 

@@ -1,4 +1,7 @@
-use std::{io, net::SocketAddr};
+use std::{
+    io,
+    net::{AddrParseError, SocketAddr},
+};
 
 use thiserror::Error;
 
@@ -17,6 +20,14 @@ pub enum StartupError {
         name: &'static str,
         #[source]
         source: url::ParseError,
+    },
+
+    #[error("{variable}={value:?} is not an IP address and port, such as 0.0.0.0:3000: {source}")]
+    InvalidBindAddress {
+        variable: &'static str,
+        value: String,
+        #[source]
+        source: AddrParseError,
     },
 
     #[error("failed to bind the HTTP server to {address}: {source}")]
