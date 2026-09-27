@@ -1,0 +1,89 @@
+{
+  "sys_time": "2026-09-27 22:35:44",
+  "curr_time": "2026-09-27 22:35:36",
+  "data": {
+    "TKL-TKO": {
+      "curr_time": "2026-09-27 22:35:36",
+      "sys_time": "2026-09-27 22:35:44",
+      "UP": [
+        {
+          "seq": "1",
+          "dest": "LHP",
+          "plat": "1",
+          "time": "2026-09-27 22:36:36",
+          "ttnt": "1",
+          "valid": "Y",
+          "source": "-"
+        },
+        {
+          "seq": "2",
+          "dest": "POA",
+          "plat": "1",
+          "time": "2026-09-27 22:38:36",
+          "ttnt": "3",
+          "valid": "Y",
+          "source": "-"
+        },
+        {
+          "seq": "3",
+          "dest": "POA",
+          "plat": "1",
+          "time": "2026-09-27 22:41:36",
+          "ttnt": "6",
+          "valid": "Y",
+          "source": "-"
+        },
+        {
+          "seq": "4",
+          "dest": "LHP",
+          "plat": "1",
+          "time": "2026-09-27 22:45:36",
+          "ttnt": "10",
+          "valid": "Y",
+          "source": "-"
+        }
+      ],
+      "DOWN": [
+        {
+          "seq": "1",
+          "dest": "TIK",
+          "plat": "2",
+          "time": "2026-09-27 22:35:36",
+          "ttnt": "0",
+          "valid": "Y",
+          "source": "-"
+        },
+        {
+          "seq": "2",
+          "dest": "NOP",
+          "plat": "2",
+          "time": "2026-09-27 22:38:36",
+          "ttnt": "3",
+          "valid": "Y",
+          "source": "-"
+        },
+        {
+          "seq": "3",
+          "dest": "NOP",
+          "plat": "2",
+          "time": "2026-09-27 22:43:36",
+          "ttnt": "8",
+          "valid": "Y",
+          "source": "-"
+        },
+        {
+          "seq": "4",
+          "dest": "TIK",
+          "plat": "2",
+          "time": "2026-09-27 22:45:36",
+          "ttnt": "10",
+          "valid": "Y",
+          "source": "-"
+        }
+      ]
+    }
+  },
+  "isdelay": "N",
+  "status": 1,
+  "message": "successful"
+}
