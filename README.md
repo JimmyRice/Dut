@@ -92,6 +92,26 @@ curl http://127.0.0.1:3000/api/lines/TKL/stations/TKO/next-trains
 
 服务收到 `SIGTERM` 或 Ctrl-C 后不再接受新请求，等正在处理的请求完成后退出。
 
+## Docker
+
+镜像分两阶段构建：先在 Alpine 里编译出完全静态链接的 musl 程序，再放进只有 CA 证书和非 root 用户的 [distroless static](https://github.com/GoogleContainerTools/distroless) 基础镜像。整个镜像约 10 MB，里面没有 shell。
+
+```bash
+docker build -t dut .
+```
+
+```bash
+docker run --rm -p 3000:3000 dut
+```
+
+镜像里已经设置了 `DUT_BIND_ADDRESS=0.0.0.0:3000`。编译阶段始终在本机架构上运行，用 [xx](https://github.com/tonistiigi/xx) 交叉编译，所以在 Apple Silicon 上构建 amd64 镜像也不需要模拟 CPU：
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 -t dut .
+```
+
+镜像里没有 `curl`，所以没有 `HEALTHCHECK`。要做健康检查，可以让编排系统直接请求 `/api/lines`，这个接口不访问上游。
+
 ## 日志
 
 - **日志级别**：用 `RUST_LOG` 设置，默认值是 `info,dut=debug,tower_http=debug`，会输出缓存命中等调试信息。想安静一些可以用 `RUST_LOG=info cargo run`。

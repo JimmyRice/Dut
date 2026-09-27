@@ -1,0 +1,6 @@
+# The image is built from the manifest, the lock file and the sources alone.
+# Everything else, notably target/ and .git/, stays out of the build context.
+*
+!Cargo.toml
+!Cargo.lock
+!src/
