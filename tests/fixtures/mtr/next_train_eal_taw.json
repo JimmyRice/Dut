@@ -1,0 +1,50 @@
+{
+  "sys_time": "2026-09-27 22:35:54",
+  "curr_time": "2026-09-27 22:35:51",
+  "data": {
+    "EAL-TAW": {
+      "curr_time": "2026-09-27 22:35:51",
+      "sys_time": "2026-09-27 22:35:54",
+      "UP": [
+        {
+          "seq": "1",
+          "dest": "SHS",
+          "plat": "1",
+          "time": "2026-09-27 22:37:51",
+          "ttnt": "2",
+          "valid": "Y",
+          "source": "-",
+          "route": "",
+          "timeType": "A"
+        },
+        {
+          "seq": "2",
+          "dest": "LOW",
+          "plat": "1",
+          "time": "2026-09-27 22:40:51",
+          "ttnt": "5",
+          "valid": "Y",
+          "source": "-",
+          "route": "RAC",
+          "timeType": "D"
+        }
+      ],
+      "DOWN": [
+        {
+          "seq": "1",
+          "dest": "ADM",
+          "plat": "2",
+          "time": "2026-09-27 22:38:51",
+          "ttnt": "3",
+          "valid": "Y",
+          "source": "-",
+          "route": "",
+          "timeType": "A"
+        }
+      ]
+    }
+  },
+  "isdelay": "Y",
+  "status": 1,
+  "message": "successful"
+}
