@@ -68,6 +68,12 @@ impl BoardView {
     pub fn upcoming(&self, direction: Direction) -> impl Iterator<Item = &TrainArrival> {
         self.board().upcoming(direction, self.as_of)
     }
+
+    /// Directions a rider can board in at this instant; see
+    /// [`NextTrainBoard::directions`].
+    pub fn directions(&self) -> impl Iterator<Item = Direction> + '_ {
+        self.board().directions(self.as_of)
+    }
 }
 
 /// The boards of every line at one station.

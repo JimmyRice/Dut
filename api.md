@@ -55,6 +55,14 @@ Dut 是 MTRGo App 的数据整合后端。本文档记录全部对外 HTTP 接�
 
 线路名和站名都以 `{ "en": "...", "tc": "..." }` 返回，`en` 是英文，`tc` 是繁体中文。客户端按用户语言取用即可，不需要为不同语言重复请求。
 
+### 行车方向
+
+每条线路有两个行车方向，用 `direction` 标识，取值为 `up` 或 `down`，与港铁数据源一致。`up` / `down` 只是稳定的 ID，本身不表示"往哪走"：大多数线路的 `up` 朝 `stations` 列表的末端，迪士尼綫却正好相反；将军澳綫和东铁綫还有支线。所以：
+
+- **展示给用户时用 `towards`。** 它列出这个方向驶往的终点站，写法与月台指示牌一致，例如将军澳站的上行是"往 寶琳／康城"。客户端直接拼成标题即可，不需要自己推算。
+- **需要记住方向时用 `direction`。** 例如保存用户常坐的方向。
+- **`towards` 只列主要终点。** 中途折返的班次（例如只到調景嶺的将军澳綫列车、只到上水的东铁綫列车）仍归在同一个方向下，实际终点看每班车的 `destination`。
+
 ### 缓存与数据新鲜度
 
 服务端会缓存上游数据（策略见 `ARCHITECTURE.md`），并通过以下方式告诉客户端数据有多新：
@@ -92,7 +100,7 @@ Dut 是 MTRGo App 的数据整合后端。本文档记录全部对外 HTTP 接�
 
 | 方法 | URL | 用途 | 数据来源 |
 |---|---|---|---|
-| `GET` | `/api/lines` | 获取所有线路、车站、中英文站名、上下行终点站和线路颜色 | 服务内置的静态资料 |
+| `GET` | `/api/lines` | 获取所有线路、车站、中英文站名、行车方向和线路颜色 | 服务内置的静态资料 |
 | `GET` | `/api/lines/status` | 获取全线路服务状态（正常、延误、受阻等） | 港铁线路状态 JSON |
 | `GET` | `/api/lines/{line}/stations/{station}/next-trains` | 获取某条线在某个车站的下几班列车 | 港铁 Next Train API |
 | `GET` | `/api/stations/{station}/next-trains` | 获取途经某个车站的所有线路的下几班列车（适合换乘站） | 港铁 Next Train API |
@@ -109,7 +117,7 @@ GET /api/lines
 
 - 线路代码、中英文名称、品牌色
 - 按行车顺序排列的车站
-- 上行（`up`）和下行（`down`）列车的终点站
+- 两个行车方向，以及各自驶往的终点站（见[行车方向](#行车方向)）
 
 资料编译在服务内部，只会随部署更新，适合 App 启动时拉取一次后在本地缓存。
 
@@ -140,14 +148,20 @@ curl http://127.0.0.1:3000/api/lines
         { "code": "SUN", "name": { "en": "Sunny Bay", "tc": "欣澳" } },
         { "code": "DIS", "name": { "en": "Disneyland Resort", "tc": "迪士尼" } }
       ],
-      "destinations": {
-        "up": [
-          { "code": "SUN", "name": { "en": "Sunny Bay", "tc": "欣澳" } }
-        ],
-        "down": [
-          { "code": "DIS", "name": { "en": "Disneyland Resort", "tc": "迪士尼" } }
-        ]
-      }
+      "directions": [
+        {
+          "direction": "up",
+          "towards": [
+            { "code": "SUN", "name": { "en": "Sunny Bay", "tc": "欣澳" } }
+          ]
+        },
+        {
+          "direction": "down",
+          "towards": [
+            { "code": "DIS", "name": { "en": "Disneyland Resort", "tc": "迪士尼" } }
+          ]
+        }
+      ]
     }
   ]
 }
@@ -162,8 +176,9 @@ curl http://127.0.0.1:3000/api/lines
 | `lines[].name` | object | 线路名称 `{ en, tc }` |
 | `lines[].color` | string | 线路品牌色，格式为 `#RRGGBB` |
 | `lines[].stations` | array | 本线车站，按行车顺序排列，元素为[车站引用](#车站引用-station) |
-| `lines[].destinations.up` | array | 上行列车可能的终点站 |
-| `lines[].destinations.down` | array | 下行列车可能的终点站 |
+| `lines[].directions` | array | 两个行车方向，依次为 `up`、`down` |
+| `lines[].directions[].direction` | string | 方向 ID，`up` 或 `down`，见[行车方向](#行车方向) |
+| `lines[].directions[].towards` | array | 这个方向驶往的终点站，写法与月台指示牌一致，元素为[车站引用](#车站引用-station)。例如将军澳綫 `up` 为寶琳、康城 |
 
 #### 车站引用 `station`
 
@@ -298,10 +313,11 @@ curl http://127.0.0.1:3000/api/lines/status
 GET /api/lines/{line}/stations/{station}/next-trains
 ```
 
-返回某条线路在某个车站的上行和下行列车，每个方向最多 4 班，包括目的地、月台和预计到站时间。
+按行车方向返回某条线路在某个车站的列车。每个方向写明驶往哪里（`towards`），并列出最多 4 班列车的终点站、月台和预计到站时间。
 
 - 已开出超过 30 秒的班次会被自动过滤，所以每个方向可能少于 4 班。
-- 终点站、非服务时间等情况下，某个方向可能是空数组。
+- 本站是某个方向的终点时，不返回这个方向。例如寶琳站只有 `down`（往北角）；康城站在支线末端，也没有 `up`。如果港铁仍在这个方向报了列车，则照常返回，不会隐藏任何列车。
+- 非服务时间等情况下，方向照常返回，但 `trains` 可能是空数组。
 
 ### 路径参数
 
@@ -320,61 +336,72 @@ curl http://127.0.0.1:3000/api/lines/TKL/stations/TKO/next-trains
 
 `200 OK`，响应头包含 `Cache-Control: public, max-age=10`。
 
-以下为节选：每个方向实际最多返回 4 班，这里各展示 2 班。
+以下为 01:09 的真实响应，上行只展示前 2 班。这时往北角的尾班车已经开出，所以 `down` 的 `trains` 为空，但 `towards` 仍然告诉用户这是往北角的方向。
 
 ```json
 {
   "line": { "code": "TKL", "name": { "en": "Tseung Kwan O Line", "tc": "將軍澳綫" } },
   "station": { "code": "TKO", "name": { "en": "Tseung Kwan O", "tc": "將軍澳" } },
-  "generated_at": "2026-09-28T00:18:27+08:00",
-  "fetched_at": "2026-09-28T00:18:40+08:00",
+  "generated_at": "2026-09-28T01:09:49+08:00",
+  "fetched_at": "2026-09-28T01:09:55+08:00",
   "stale": false,
   "delayed": false,
   "alert": null,
-  "up": [
+  "directions": [
     {
-      "sequence": 1,
-      "destination": { "code": "POA", "name": { "en": "Po Lam", "tc": "寶琳" } },
-      "platform": 1,
-      "arrival_at": "2026-09-28T00:18:27+08:00",
-      "time_type": null,
-      "via_racecourse": false
+      "direction": "up",
+      "towards": [
+        { "code": "POA", "name": { "en": "Po Lam", "tc": "寶琳" } },
+        { "code": "LHP", "name": { "en": "LOHAS Park", "tc": "康城" } }
+      ],
+      "trains": [
+        {
+          "destination": { "code": "POA", "name": { "en": "Po Lam", "tc": "寶琳" } },
+          "platform": 1,
+          "arrival_at": "2026-09-28T01:13:49+08:00",
+          "time_type": null,
+          "via_racecourse": false
+        },
+        {
+          "destination": { "code": "LHP", "name": { "en": "LOHAS Park", "tc": "康城" } },
+          "platform": 1,
+          "arrival_at": "2026-09-28T01:16:49+08:00",
+          "time_type": null,
+          "via_racecourse": false
+        }
+      ]
     },
     {
-      "sequence": 2,
-      "destination": { "code": "POA", "name": { "en": "Po Lam", "tc": "寶琳" } },
-      "platform": 1,
-      "arrival_at": "2026-09-28T00:20:27+08:00",
-      "time_type": null,
-      "via_racecourse": false
-    }
-  ],
-  "down": [
-    {
-      "sequence": 1,
-      "destination": { "code": "NOP", "name": { "en": "North Point", "tc": "北角" } },
-      "platform": 2,
-      "arrival_at": "2026-09-28T00:20:27+08:00",
-      "time_type": null,
-      "via_racecourse": false
-    },
-    {
-      "sequence": 2,
-      "destination": { "code": "TIK", "name": { "en": "Tiu Keng Leng", "tc": "調景嶺" } },
-      "platform": 2,
-      "arrival_at": "2026-09-28T00:25:27+08:00",
-      "time_type": null,
-      "via_racecourse": false
+      "direction": "down",
+      "towards": [
+        { "code": "NOP", "name": { "en": "North Point", "tc": "北角" } }
+      ],
+      "trains": []
     }
   ]
 }
 ```
 
-东铁线会额外填上 `time_type`（`GET /api/lines/EAL/stations/SHT/next-trains` 节选）：
+在终点站寶琳（`GET /api/lines/TKL/stations/POA/next-trains`，同一时刻）只返回离开本站的方向：
 
 ```json
 {
-  "sequence": 1,
+  "directions": [
+    {
+      "direction": "down",
+      "towards": [
+        { "code": "NOP", "name": { "en": "North Point", "tc": "北角" } }
+      ],
+      "trains": []
+    }
+  ]
+}
+```
+
+东铁线的列车会额外填上 `time_type`（`GET /api/lines/EAL/stations/SHT/next-trains` 中 `trains` 的一个元素）：
+
+```json
+{
   "destination": { "code": "SHS", "name": { "en": "Sheung Shui", "tc": "上水" } },
   "platform": 2,
   "arrival_at": "2026-09-28T00:19:34+08:00",
@@ -407,14 +434,20 @@ curl http://127.0.0.1:3000/api/lines/TKL/stations/TKO/next-trains
 | `alert` | object 或 `null` | 特别安排通告，没有时为 `null`。结构为 `{ en: notice, tc: notice }` |
 | `alert.*.message` | string | 通告文字 |
 | `alert.*.url` | string 或 `null` | 通告详情链接 |
-| `up` | array | 上行列车，按 `sequence` 排序，终点站方向见 `GET /api/lines` 的 `destinations.up` |
-| `down` | array | 下行列车，按 `sequence` 排序 |
+| `directions` | array | 本站可以乘车的行车方向，`up` 在前。本站是某个方向的终点时不含这个方向 |
 
-#### 列车 `up[]` / `down[]`
+#### 行车方向 `directions[]`
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `sequence` | integer | 港铁给出的班次顺序，从 1 开始。前面的班次被过滤后，第一个元素可能不是 1 |
+| `direction` | string | 方向 ID，`up` 或 `down`，见[行车方向](#行车方向) |
+| `towards` | array | 从本站出发、这个方向能到达的主要终点站，写法与月台指示牌一致，元素为[车站引用](#车站引用-station)。适合直接做成"往 寶琳／康城"这样的标题。港铁报了列车、但本站之后已没有主要终点时为空数组 |
+| `trains` | array | 这个方向即将到站的列车，最多 4 班，按到站先后排列 |
+
+#### 列车 `directions[].trains[]`
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
 | `destination` | object | 列车终点站，见[车站引用](#车站引用-station) |
 | `platform` | integer | 月台编号 |
 | `arrival_at` | string（时间） | 预计到站时间；`time_type` 为 `departure` 时是预计开出时间。**倒计时请用它计算** |
@@ -480,7 +513,7 @@ curl http://127.0.0.1:3000/api/stations/ADM/next-trains
 
 `200 OK`，响应头包含 `Cache-Control: public, max-age=10`。
 
-以下为节选：实际返回 EAL、SIL、TWL、ISL 四条线，每个方向最多 4 班。示例中 SIL 的失败是为了演示错误的样子。
+以下为 01:09 的真实响应节选：实际返回 EAL、SIL、TWL、ISL 四条线，这里只展示 EAL 和 TWL，此时两条线的尾班车都已开出。金钟是东铁线的终点，所以 EAL 只有 `up` 一个方向。
 
 ```json
 {
@@ -489,65 +522,65 @@ curl http://127.0.0.1:3000/api/stations/ADM/next-trains
     {
       "line": { "code": "EAL", "name": { "en": "East Rail Line", "tc": "東鐵綫" } },
       "board": {
-        "generated_at": "2026-09-28T00:18:34+08:00",
-        "fetched_at": "2026-09-28T00:18:41+08:00",
+        "generated_at": "2026-09-28T01:09:49+08:00",
+        "fetched_at": "2026-09-28T01:09:57+08:00",
         "stale": false,
         "delayed": false,
         "alert": null,
-        "up": [
+        "directions": [
           {
-            "sequence": 1,
-            "destination": { "code": "SHT", "name": { "en": "Sha Tin", "tc": "沙田" } },
-            "platform": 7,
-            "arrival_at": "2026-09-28T00:20:34+08:00",
-            "time_type": "departure",
-            "via_racecourse": false
+            "direction": "up",
+            "towards": [
+              { "code": "LOW", "name": { "en": "Lo Wu", "tc": "羅湖" } },
+              { "code": "LMC", "name": { "en": "Lok Ma Chau", "tc": "落馬洲" } }
+            ],
+            "trains": []
           }
-        ],
-        "down": []
+        ]
       },
       "error": null
     },
     {
-      "line": { "code": "SIL", "name": { "en": "South Island Line", "tc": "南港島綫" } },
-      "board": null,
-      "error": {
-        "code": "upstream_unavailable",
-        "message": "An upstream service is unavailable"
-      }
-    },
-    {
       "line": { "code": "TWL", "name": { "en": "Tsuen Wan Line", "tc": "荃灣綫" } },
       "board": {
-        "generated_at": "2026-09-28T00:18:22+08:00",
-        "fetched_at": "2026-09-28T00:18:41+08:00",
+        "generated_at": "2026-09-28T01:09:46+08:00",
+        "fetched_at": "2026-09-28T01:09:57+08:00",
         "stale": false,
         "delayed": false,
         "alert": null,
-        "up": [
+        "directions": [
           {
-            "sequence": 1,
-            "destination": { "code": "TSW", "name": { "en": "Tsuen Wan", "tc": "荃灣" } },
-            "platform": 1,
-            "arrival_at": "2026-09-28T00:21:22+08:00",
-            "time_type": null,
-            "via_racecourse": false
-          }
-        ],
-        "down": [
+            "direction": "up",
+            "towards": [
+              { "code": "TSW", "name": { "en": "Tsuen Wan", "tc": "荃灣" } }
+            ],
+            "trains": []
+          },
           {
-            "sequence": 1,
-            "destination": { "code": "CEN", "name": { "en": "Central", "tc": "中環" } },
-            "platform": 4,
-            "arrival_at": "2026-09-28T00:21:22+08:00",
-            "time_type": null,
-            "via_racecourse": false
+            "direction": "down",
+            "towards": [
+              { "code": "CEN", "name": { "en": "Central", "tc": "中環" } }
+            ],
+            "trains": []
           }
         ]
       },
       "error": null
     }
   ]
+}
+```
+
+某条线路失败时，`lines` 中对应元素的**示意**如下（非真实数据）：
+
+```json
+{
+  "line": { "code": "SIL", "name": { "en": "South Island Line", "tc": "南港島綫" } },
+  "board": null,
+  "error": {
+    "code": "upstream_unavailable",
+    "message": "An upstream service is unavailable"
+  }
 }
 ```
 
@@ -630,4 +663,5 @@ curl http://127.0.0.1:3000/api/stations/ADM/next-trains
 
 | 日期 | 变更 |
 |---|---|
+| 2026-09-28 | **不兼容变更。** 列车到站接口（`GET /api/lines/{line}/stations/{station}/next-trains`、`GET /api/stations/{station}/next-trains`）的 `up` / `down` 数组改为 `directions` 数组，每个方向带 `direction`、`towards`、`trains`；本站是某方向终点时不再返回该方向；列车移除 `sequence`，改以数组顺序表示先后。`GET /api/lines` 的 `destinations` 改为 `directions`，`towards` 只列月台指示牌上的主要终点。 |
 | 2026-09-28 | 首版。新增 `GET /api/lines`、`GET /api/lines/status`、`GET /api/lines/{line}/stations/{station}/next-trains`、`GET /api/stations/{station}/next-trains`。移除 Hello 示例接口 `GET /api/hello`、`GET /api/hello.json`。 |

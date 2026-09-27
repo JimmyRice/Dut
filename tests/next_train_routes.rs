@@ -84,35 +84,90 @@ async fn line_board_returns_upcoming_trains_in_hong_kong_time() {
             "stale": false,
             "delayed": false,
             "alert": null,
-            "up": [
+            "directions": [
                 {
-                    "sequence": 2,
-                    "destination": station("LHP", "LOHAS Park", "康城"),
-                    "platform": 1,
-                    "arrival_at": first.api(),
-                    "time_type": null,
-                    "via_racecourse": false,
+                    "direction": "up",
+                    "towards": [
+                        station("POA", "Po Lam", "寶琳"),
+                        station("LHP", "LOHAS Park", "康城"),
+                    ],
+                    "trains": [
+                        {
+                            "destination": station("LHP", "LOHAS Park", "康城"),
+                            "platform": 1,
+                            "arrival_at": first.api(),
+                            "time_type": null,
+                            "via_racecourse": false,
+                        },
+                        {
+                            "destination": station("POA", "Po Lam", "寶琳"),
+                            "platform": 1,
+                            "arrival_at": second.api(),
+                            "time_type": null,
+                            "via_racecourse": false,
+                        },
+                    ],
                 },
                 {
-                    "sequence": 3,
-                    "destination": station("POA", "Po Lam", "寶琳"),
-                    "platform": 1,
-                    "arrival_at": second.api(),
-                    "time_type": null,
-                    "via_racecourse": false,
-                },
-            ],
-            "down": [
-                {
-                    "sequence": 1,
-                    "destination": station("NOP", "North Point", "北角"),
-                    "platform": 1,
-                    "arrival_at": down.api(),
-                    "time_type": null,
-                    "via_racecourse": false,
+                    "direction": "down",
+                    "towards": [station("NOP", "North Point", "北角")],
+                    "trains": [
+                        {
+                            "destination": station("NOP", "North Point", "北角"),
+                            "platform": 1,
+                            "arrival_at": down.api(),
+                            "time_type": null,
+                            "via_racecourse": false,
+                        },
+                    ],
                 },
             ],
         })
+    );
+}
+
+#[tokio::test]
+async fn a_terminus_only_shows_the_direction_leaving_it() {
+    let app = TestApp::start().await;
+    let now = Moment::now();
+    let departure = now.plus_seconds(120);
+    mount_board(
+        &app,
+        "TKL",
+        "POA",
+        upstream_ok(schedule_body(
+            "TKL",
+            "POA",
+            now,
+            &[],
+            &[Train {
+                dest: "NOP",
+                at: departure,
+            }],
+        )),
+    )
+    .await;
+
+    let response = app.get("/api/lines/TKL/stations/POA/next-trains").await;
+
+    response.assert_json(StatusCode::OK);
+    assert_eq!(
+        response.body["directions"],
+        json!([
+            {
+                "direction": "down",
+                "towards": [station("NOP", "North Point", "北角")],
+                "trains": [
+                    {
+                        "destination": station("NOP", "North Point", "北角"),
+                        "platform": 1,
+                        "arrival_at": departure.api(),
+                        "time_type": null,
+                        "via_racecourse": false,
+                    },
+                ],
+            },
+        ])
     );
 }
 
@@ -138,7 +193,7 @@ async fn line_board_is_served_from_cache_on_repeat_requests() {
 
     first.assert_json(StatusCode::OK);
     second.assert_json(StatusCode::OK);
-    assert_eq!(first.body["up"], second.body["up"]);
+    assert_eq!(first.body["directions"], second.body["directions"]);
 }
 
 #[tokio::test]
@@ -227,23 +282,29 @@ async fn special_arrangement_notices_are_bilingual() {
             "tc": { "message": "特別服務安排", "url": "https://example.com/notice" },
         })
     );
-    assert_eq!(response.body["up"], json!([]));
+    let trains: Vec<&Value> = response.body["directions"]
+        .as_array()
+        .expect("directions should be an array")
+        .iter()
+        .map(|direction| &direction["trains"])
+        .collect();
+    assert_eq!(trains, [&json!([]), &json!([])]);
 }
 
 #[tokio::test]
 async fn station_boards_cover_every_line_and_isolate_failures() {
     let app = TestApp::start().await;
     let now = Moment::now();
-    for line in ["EAL", "TWL", "ISL"] {
+    for (line, dest) in [("EAL", "LOW"), ("TWL", "TSW"), ("ISL", "CHW")] {
         let body = schedule_body(
             line,
             "ADM",
             now,
-            &[],
             &[Train {
-                dest: "CEN",
+                dest,
                 at: now.plus_seconds(90),
             }],
+            &[],
         );
         mount_board(&app, line, "ADM", upstream_ok(body)).await;
     }
@@ -271,13 +332,20 @@ async fn station_boards_cover_every_line_and_isolate_failures() {
         if entry["line"]["code"] == "SIL" {
             assert_eq!(entry["board"], Value::Null);
             assert_eq!(entry["error"]["code"], "upstream_unavailable");
-        } else {
-            assert_eq!(entry["error"], Value::Null);
-            assert_eq!(
-                entry["board"]["down"][0]["arrival_at"],
-                now.plus_seconds(90).api()
-            );
+            continue;
         }
+        assert_eq!(entry["error"], Value::Null);
+        let directions = entry["board"]["directions"]
+            .as_array()
+            .expect("directions should be an array");
+        assert_eq!(directions[0]["direction"], "up");
+        assert_eq!(
+            directions[0]["trains"][0]["arrival_at"],
+            now.plus_seconds(90).api()
+        );
+        // Admiralty ends the East Rail Line, so it has no down direction.
+        let expected = if entry["line"]["code"] == "EAL" { 1 } else { 2 };
+        assert_eq!(directions.len(), expected, "{}", entry["line"]["code"]);
     }
 }
 
