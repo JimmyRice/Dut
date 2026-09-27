@@ -1,0 +1,104 @@
+# Publishes the container image to the GitHub Container Registry for
+# linux/amd64 and linux/arm64.
+#
+# A v* tag publishes 1.2.3, 1.2, 1 and latest. A push to master publishes
+# edge, so the newest build can be tried before it is released. Every image
+# is also tagged with its commit, as sha-<short sha>.
+
+name: Container image
+
+on:
+  push:
+    branches: [master]
+    # The image is built from these files alone; see .dockerignore. Tags are
+    # never filtered by paths.
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - src/**
+      - Dockerfile
+      - .dockerignore
+      - .github/workflows/docker.yml
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # A newer push to master supersedes an edge image still being built.
+  cancel-in-progress: ${{ github.ref_type == 'branch' }}
+
+jobs:
+  image:
+    name: Build and push
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write # push the image to ghcr.io
+      id-token: write # sign the attestation with a Sigstore certificate
+      attestations: write # store the attestation
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Registry paths must be lowercase, and the repository owner may not be.
+      - name: Name the image
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - name: Generate tags, labels and annotations
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        env:
+          # A multi-platform image needs its description on the index for the
+          # package page to show it.
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+            type=edge
+            type=sha
+
+      # The Dockerfile cross-compiles with xx on the runner's own
+      # architecture, so neither platform needs QEMU.
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      # The GitHub Actions cache keeps image layers between runs. It does not
+      # keep the Dockerfile's cargo cache mounts, so a source change compiles
+      # the dependencies again.
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Artifact attestations need a public repository on GitHub Free, Pro
+      # and Team plans. Verify with:
+      #   gh attestation verify oci://ghcr.io/<owner>/<repo>:<tag> -R <owner>/<repo>
+      - name: Attest build provenance
+        if: github.event.repository.visibility == 'public'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true

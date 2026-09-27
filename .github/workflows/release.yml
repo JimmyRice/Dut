@@ -1,0 +1,182 @@
+# Builds the dut binary for Linux, macOS and Windows on x86-64 and arm64.
+#
+# Pushing a v* tag publishes the archives as a GitHub release. Running the
+# workflow by hand builds the same archives and keeps them as workflow
+# artifacts only, which is how to try a change to this file before tagging.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # A half-published release is worse than a queued one.
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  # Keep in step with RUST_VERSION in the Dockerfile.
+  RUSTUP_TOOLCHAIN: "1.98"
+  # The release settings the Dockerfile applies to the image.
+  CARGO_PROFILE_RELEASE_LTO: "true"
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
+  CARGO_PROFILE_RELEASE_STRIP: symbols
+
+jobs:
+  check-version:
+    name: Check the tag matches Cargo.toml
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compare versions
+        shell: python
+        run: |
+          import os, sys, tomllib
+
+          with open("Cargo.toml", "rb") as manifest:
+              version = tomllib.load(manifest)["package"]["version"]
+          tag = os.environ["GITHUB_REF_NAME"]
+          if tag != f"v{version}":
+              print(f"::error::Tag {tag} does not match the Cargo.toml version {version}")
+              sys.exit(1)
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: check-version
+    # Hand-started runs have no tag to check, so the skipped check must not
+    # skip the builds.
+    if: ${{ !cancelled() && !failure() }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # musl links everything statically, so one binary runs on every
+          # distribution.
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-24.04
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+          - target: aarch64-apple-darwin
+            runner: macos-26
+          # Apple's toolchain builds Intel binaries on Apple silicon, so this
+          # does not depend on the shrinking pool of Intel runners.
+          - target: x86_64-apple-darwin
+            runner: macos-26
+          # A static C runtime spares users the Visual C++ Redistributable.
+          - target: x86_64-pc-windows-msvc
+            runner: windows-2025
+            rustflags: -C target-feature=+crt-static
+          - target: aarch64-pc-windows-msvc
+            runner: windows-11-arm
+            rustflags: -C target-feature=+crt-static
+    env:
+      TARGET: ${{ matrix.target }}
+      RUSTFLAGS: ${{ matrix.rustflags }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --target "$TARGET" --no-self-update
+
+      # aws-lc-sys and mimalloc compile C, which must be built against musl
+      # too. Ubuntu ships the compiler as musl-gcc, but on arm64 the cc crate
+      # looks for aarch64-linux-musl-gcc, so name it explicitly.
+      - name: Install the musl C toolchain
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends musl-tools
+          echo "CC_${TARGET//-/_}=musl-gcc" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: cargo build --release --locked --target "$TARGET" --bin dut
+
+      - name: Package
+        id: package
+        run: |
+          mkdir dist
+          release="target/$TARGET/release"
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            archive="dist/dut-$TARGET.zip"
+            7z a -tzip "$archive" "./$release/dut.exe"
+          else
+            archive="dist/dut-$TARGET.tar.gz"
+            tar -czf "$archive" -C "$release" dut
+          fi
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      # The archive is already compressed, so it is uploaded as is rather
+      # than wrapped in another zip. The artifact takes the file's name.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          path: ${{ steps.package.outputs.archive }}
+          archive: false
+          if-no-files-found: error
+
+  publish:
+    name: Publish the release
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the release
+      id-token: write # sign the attestation with a Sigstore certificate
+      attestations: write # store the attestation
+    steps:
+      # Without skip-decompress the Windows .zip would be unpacked, because
+      # the download treats any zip as an artifact wrapper.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: dut-*
+          path: dist
+          merge-multiple: true
+          skip-decompress: true
+
+      - name: Write checksums
+        working-directory: dist
+        run: sha256sum dut-* > SHA256SUMS
+
+      # Artifact attestations need a public repository on GitHub Free, Pro
+      # and Team plans. Verify with: gh attestation verify <file> -R <repo>
+      - name: Attest build provenance
+        if: github.event.repository.visibility == 'public'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: dist/SHA256SUMS
+
+      # The release stays a draft until every asset is attached, because an
+      # immutable release cannot gain assets once it is published.
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          flags=()
+          if [[ "$TAG" == *-* ]]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "$TAG" dist/* --draft --verify-tag --generate-notes "${flags[@]}"
+          gh release edit "$TAG" --draft=false
