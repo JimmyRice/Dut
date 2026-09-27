@@ -4,5 +4,5 @@
 mod line;
 mod station;
 
-pub use line::{ByDirection, Direction, Line, UnknownLineCode};
-pub use station::{InvalidStationCode, Station, StationCode};
+pub use line::{ByDirection, Direction, Line};
+pub use station::{Station, StationCode};

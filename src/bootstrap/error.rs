@@ -2,6 +2,8 @@ use std::{io, net::SocketAddr};
 
 use thiserror::Error;
 
+/// Why the process could not start, or stopped serving. Only `main` sees it,
+/// so unlike API errors it may name addresses and upstream URLs.
 #[derive(Debug, Error)]
 pub enum StartupError {
     #[error("failed to install the log subscriber: {0}")]

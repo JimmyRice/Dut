@@ -92,6 +92,7 @@ impl Station {
     }
 
     /// Every known station, ordered by code.
+    #[cfg(test)]
     pub fn all() -> &'static [Self] {
         STATIONS
     }
