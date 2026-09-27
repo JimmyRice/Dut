@@ -1,10 +1,16 @@
+use std::env;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
+use super::StartupError;
 use crate::infrastructure::cache::CachePolicy;
 
 const DEFAULT_PORT: u16 = 3000;
 const DEFAULT_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Overrides the listen address, e.g. `0.0.0.0:3000` in a container, where
+/// the default localhost address cannot be reached from outside.
+const BIND_ADDRESS_VAR: &str = "DUT_BIND_ADDRESS";
 
 const NEXT_TRAIN_ENDPOINT: &str = "https://rt.data.gov.hk/v1/transport/mtr/getSchedule.php";
 const LINE_STATUS_ENDPOINT: &str = "https://tnews.mtr.com.hk/alert/ryg_line_status.json";
@@ -56,6 +62,18 @@ pub struct MtrConfig {
 }
 
 impl AppConfig {
+    /// The defaults, adjusted by the process environment.
+    ///
+    /// Only the listen address can be set this way: it is the one setting
+    /// that depends on where the process runs rather than on what it serves.
+    pub fn from_env() -> Result<Self, StartupError> {
+        let config = Self::default();
+        match env::var_os(BIND_ADDRESS_VAR) {
+            Some(value) => config.with_bind_address(&value.to_string_lossy()),
+            None => Ok(config),
+        }
+    }
+
     const fn new(
         bind_address: SocketAddr,
         outbound_http_timeout: Duration,
@@ -78,6 +96,17 @@ impl AppConfig {
         self.mtr.next_train_endpoint = next_train.into();
         self.mtr.line_status_endpoint = line_status.into();
         self
+    }
+
+    fn with_bind_address(mut self, value: &str) -> Result<Self, StartupError> {
+        self.bind_address = value
+            .parse()
+            .map_err(|source| StartupError::InvalidBindAddress {
+                variable: BIND_ADDRESS_VAR,
+                value: value.to_owned(),
+                source,
+            })?;
+        Ok(self)
     }
 
     pub(crate) const fn bind_address(&self) -> SocketAddr {
@@ -111,6 +140,54 @@ impl Default for MtrConfig {
             request_timeout: MTR_REQUEST_TIMEOUT,
             next_train_cache: NEXT_TRAIN_CACHE,
             line_status_cache: LINE_STATUS_CACHE,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::Ipv6Addr;
+
+    use super::*;
+
+    #[test]
+    fn listens_on_localhost_by_default() {
+        let config = AppConfig::default();
+
+        assert_eq!(
+            config.bind_address(),
+            SocketAddr::from((Ipv4Addr::LOCALHOST, DEFAULT_PORT))
+        );
+    }
+
+    #[test]
+    fn accepts_ipv4_and_ipv6_bind_addresses() {
+        let ipv4 = AppConfig::default().with_bind_address("0.0.0.0:3000");
+        let ipv6 = AppConfig::default().with_bind_address("[::]:8080");
+
+        assert_eq!(
+            ipv4.map(|config| config.bind_address()).ok(),
+            Some(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 3000)))
+        );
+        assert_eq!(
+            ipv6.map(|config| config.bind_address()).ok(),
+            Some(SocketAddr::from((Ipv6Addr::UNSPECIFIED, 8080)))
+        );
+    }
+
+    #[test]
+    fn rejects_bind_addresses_without_an_ip_and_port() {
+        for value in ["3000", "localhost:3000", "0.0.0.0", ""] {
+            let result = AppConfig::default().with_bind_address(value);
+
+            assert!(
+                matches!(
+                    result,
+                    Err(StartupError::InvalidBindAddress { value: ref rejected, .. })
+                        if rejected == value
+                ),
+                "{value:?} should be rejected"
+            );
         }
     }
 }
