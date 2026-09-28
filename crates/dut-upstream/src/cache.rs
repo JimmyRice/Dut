@@ -34,7 +34,7 @@ use tracing::{Instrument, Span, debug, error, info, info_span, warn};
 use dut_core::application::source::{Freshness, Snapshot};
 use dut_telemetry::millis;
 
-/// How a [`RefreshingCache`] treats age and upstream failures.
+/// How the adapters' caches treat age and upstream failures.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CachePolicy {
     /// Freshness period used when upstream gives no hint.
