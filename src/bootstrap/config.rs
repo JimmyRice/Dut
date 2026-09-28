@@ -2,8 +2,9 @@ use std::env;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
+use dut_upstream::CachePolicy;
+
 use super::StartupError;
-use crate::infrastructure::cache::CachePolicy;
 
 const DEFAULT_PORT: u16 = 3000;
 const DEFAULT_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -60,7 +61,7 @@ pub struct AppConfig {
 
 /// Where and how to read the MTR's real-time feeds.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct MtrConfig {
+pub(crate) struct MtrConfig {
     pub next_train_endpoint: String,
     pub line_status_endpoint: String,
     pub request_timeout: Duration,

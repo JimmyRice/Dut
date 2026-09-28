@@ -6,15 +6,18 @@ These rules apply to contributors and coding agents working in this repository.
 
 - Keep `src/main.rs` limited to runtime startup. Never add routes, business
   logic, configuration parsing, or external calls there.
-- Keep `domain` free of Axum, Reqwest, Serde, database, filesystem, and network
-  dependencies.
+- Keep `dut-core` (`domain` and `application`) free of Axum, Reqwest, Serde,
+  database, filesystem, and network dependencies.
 - Put business workflows in `application`, not in route handlers.
-- Put all outbound HTTP, MTR API, cache, and persistence code in
-  `infrastructure`.
+- Put all outbound HTTP, MTR API, cache, and persistence code in the
+  infrastructure crates: the shared client in `dut-http`, adapters and caches
+  in `dut-upstream`.
 - Put Axum extractors, status codes, headers, and request/response DTOs in
-  `api` only.
-- Construct concrete dependencies only in `bootstrap`; share them through
-  `AppState`.
+  `dut-api` only.
+- Construct concrete dependencies only in `bootstrap` (`src/bootstrap`); share
+  them through `AppState`.
+- Export from a crate only what another crate uses; keep the rest
+  `pub(crate)`.
 - Do not expose upstream error details or secrets in API responses. Map errors
   through `ApiError`.
 

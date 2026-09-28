@@ -1,10 +1,7 @@
-mod api;
-mod application;
-mod bootstrap;
-mod domain;
-mod infrastructure;
-mod state;
+//! The `dut` binary's composition root. Every other part of the service
+//! lives in a crate under `crates/`; this one reads the configuration,
+//! builds each concrete dependency once, and serves the result.
 
-pub mod telemetry;
+mod bootstrap;
 
 pub use bootstrap::{AppConfig, StartupError, build_app, run};

@@ -304,21 +304,89 @@ name = "dut"
 version = "0.1.0"
 dependencies = [
  "axum",
- "bytes",
- "futures",
+ "dut-api",
+ "dut-core",
+ "dut-http",
+ "dut-telemetry",
+ "dut-upstream",
  "jiff",
  "mimalloc",
- "nu-ansi-term",
+ "reqwest",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "wiremock",
+]
+
+[[package]]
+name = "dut-api"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "dut-core",
+ "dut-telemetry",
+ "jiff",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tower-http 0.7.1",
+ "tracing",
+]
+
+[[package]]
+name = "dut-core"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "jiff",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "dut-http"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "dut-telemetry",
  "reqwest",
  "serde",
  "serde_json",
  "thiserror",
  "tokio",
- "tower",
- "tower-http 0.7.1",
+ "tracing",
+]
+
+[[package]]
+name = "dut-telemetry"
+version = "0.1.0"
+dependencies = [
+ "jiff",
+ "nu-ansi-term",
+ "thiserror",
  "tracing",
  "tracing-subscriber",
- "url",
+]
+
+[[package]]
+name = "dut-upstream"
+version = "0.1.0"
+dependencies = [
+ "dut-core",
+ "dut-http",
+ "dut-telemetry",
+ "futures",
+ "jiff",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
  "wiremock",
 ]
 

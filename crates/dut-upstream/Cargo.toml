@@ -1,0 +1,27 @@
+[package]
+name = "dut-upstream"
+description = "Adapters for the MTR feeds and other upstreams, behind a refreshing cache."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+dut-core.workspace = true
+dut-http.workspace = true
+dut-telemetry.workspace = true
+
+futures.workspace = true
+jiff.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "net", "rt", "test-util"] }
+wiremock.workspace = true

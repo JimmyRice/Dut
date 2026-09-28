@@ -1,63 +1,93 @@
 # Architecture
 
-This project uses a layered architecture with a single composition root. The
-dependency direction is inward: HTTP and external services depend on the
-application and domain layers, never the reverse.
+This project is a Cargo workspace with a layered architecture and a single
+composition root. The dependency direction is inward: HTTP and external
+services depend on the application and domain layers, never the reverse.
+Layers live in separate crates, so each crate's `Cargo.toml` enforces the
+direction: a crate cannot import what it does not depend on.
 
-## Layers
+## Crates
 
-- `domain`: Pure business types and rules. It must not import Axum, Reqwest,
-  Serde, storage drivers, or transport-specific types.
-- `application`: Use cases and orchestration. It may depend on `domain`, but it
-  must not contain HTTP handlers or concrete external I/O.
-- `infrastructure`: Concrete outbound adapters such as HTTP clients, MTR API
-  clients, caches, and repositories.
+Crates are split where code is reused or deployed separately, not one per
+layer.
+
+| Crate | Layer | Contents | Workspace dependencies |
+| --- | --- | --- | --- |
+| `dut-core` | domain, application | Domain types, use cases, their ports, `Snapshot` and `Freshness` | none |
+| `dut-telemetry` | telemetry | Log output and log-field conventions | none |
+| `dut-http` | infrastructure | `OutboundHttpClient` and upstream freshness parsing | telemetry |
+| `dut-upstream` | infrastructure | MTR adapters, `RefreshingCache`, the connectivity check | core, http, telemetry |
+| `dut-api` | api | Axum routes, DTOs, middleware, `ApiError`, `AppState` | core, telemetry |
+| `dut` (root package) | bootstrap | Configuration, wiring, process lifecycle | all |
+
+- `domain`: Pure business types and rules. `dut-core` has no Axum, Reqwest,
+  Serde, or Tokio dependency, so this is a compile error rather than a
+  convention.
+- `application`: Use cases and orchestration, and the ports through which
+  they read external data. It may depend on `domain`, but it must not contain
+  HTTP handlers or concrete external I/O.
+- `infrastructure`: Concrete outbound adapters. Shared helpers are grouped by
+  what they depend on rather than collected in a utilities crate: every
+  adapter calls upstream through the one `OutboundHttpClient` in `dut-http`,
+  and `RefreshingCache` stays in `dut-upstream` until a second crate needs it.
 - `api`: Axum routes, request/response DTOs, validation, request ID and
   tracing middleware, and the mapping from application results to HTTP
-  responses.
-- `state`: Dependencies shared by handlers. Services and infrastructure are
-  constructed once and cloned through Axum state. It sits outside `bootstrap`
-  because `api` reads it and `bootstrap` builds it.
-- `bootstrap`: The composition root and process lifecycle. It holds the
-  configuration and startup errors, creates infrastructure and services,
-  assembles `AppState`, builds the application, and serves it.
-- `telemetry`: Log output and log-field conventions shared by every layer. It
-  depends on no other module in the crate.
+  responses. `AppState` holds the services shared by handlers. Its data
+  sources are type parameters, so `dut-api` never depends on an adapter.
+- `bootstrap`: The composition root and process lifecycle, in the root
+  package's `src/`. It holds the configuration and startup errors, creates
+  infrastructure and services, assembles `AppState`, builds the application,
+  and serves it.
+- `telemetry`: Log output and log-field conventions shared by every crate.
 
 ## Request flow
 
 ```text
 HTTP request
-  -> api/routes
-  -> application service
-  -> domain model/rules
-  -> infrastructure adapter when external data is required
-  -> API DTO
+  -> dut-api route
+  -> dut-core application service
+  -> dut-core domain model/rules
+  -> dut-upstream adapter when external data is required
+  -> dut-api DTO
   -> HTTP response
 ```
 
-## Module map
+## Workspace map
 
 ```text
-src/
-  domain/          network (lines, stations), next_train, line_status, time
-  application/     source (Snapshot, Freshness), next_train, line_status
-  infrastructure/  http_client, http_freshness, cache, connectivity, mtr/{next_train, line_status}
-  api/             dto, routes, error, http_cache, middleware
-  bootstrap/       config, error (StartupError), server
-  telemetry/       console logging, request_blocks (terminal view, one block per request)
-  state.rs         AppState
-  lib.rs, main.rs  crate root and process entry point
+Cargo.toml        workspace manifest, and the dut binary package
+src/              bootstrap/{config, error (StartupError), server}, lib.rs, main.rs
+crates/
+  dut-core/       domain/{network, next_train, line_status, localized, time},
+                  application/{source, next_train, line_status}
+  dut-telemetry/  console logging, request_blocks (terminal view, one block per request)
+  dut-http/       OutboundHttpClient, freshness
+  dut-upstream/   cache, connectivity, mtr/{next_train, line_status}
+  dut-api/        routes, dto, error, http_cache, middleware, state
+tests/api/        route-level tests of the whole application
+tests/fixtures/   captured upstream responses, also read by dut-upstream's unit tests
 ```
 
-The library exports only what `main` and the route tests use: `AppConfig`,
-`build_app`, `run`, `StartupError`, and `telemetry::init`. Every layer is a
-private module, so the compiler reports code that nothing uses. Keep them
-private and export an item only when a caller outside the crate needs it.
+`default-members` lists every crate, so `cargo build`, `cargo clippy`, and
+`cargo test` at the root cover the whole workspace; add `-p <crate>` for one.
+Dependency versions are pinned once in `[workspace.dependencies]`, and every
+crate inherits its version, edition, and lints from the workspace.
+
+## Visibility
+
+Each crate exports only what another crate uses and keeps everything else in
+private modules, where the compiler still reports code that nothing uses. It
+cannot do so for exported items, so keep exports few. The workspace enables
+`unreachable_pub`: `pub` marks exactly what other crates may use, and anything
+internal says `pub(crate)`. `dut-core` exports its `domain` and `application`
+modules whole, since every other crate builds on them.
+
+The `dut` library exports only what `main` and the route tests use:
+`AppConfig`, `build_app`, `run`, and `StartupError`.
 
 ## Caching and freshness
 
-Upstream feeds are read through `infrastructure::cache::RefreshingCache`, a
+Upstream feeds are read through `RefreshingCache` in `dut-upstream`, a
 generic in-memory cache with one entry per key. The principle is to **cache
 absolute facts and derive relative values at the edge**:
 
@@ -96,7 +126,7 @@ API responses carry `Cache-Control: public, max-age=<remaining freshness>`,
 or `no-cache` when stale, so HTTP caches downstream can safely add another
 layer.
 
-At startup, `infrastructure::connectivity::ConnectivityCheck` requests one
+At startup, `dut_upstream::connectivity::ConnectivityCheck` requests one
 document from every upstream in the background and logs whether each could be
 reached. Each adapter supplies its own probe request, so the check uses the
 same URLs and timeouts as real traffic. It only reports: a failed probe does
@@ -108,15 +138,16 @@ move the cache behind a shared store.
 
 ## Adding a feature
 
-1. Add transport-independent entities or value objects under `domain`.
-2. Add the use case under `application`; define an application-owned port when
-   the use case requires external data.
-3. Implement that port under `infrastructure`, calling upstream through
+1. Add transport-independent entities or value objects under `domain` in
+   `dut-core`.
+2. Add the use case under `application` in `dut-core`; define a port there
+   when the use case requires external data.
+3. Implement that port in `dut-upstream`, calling upstream through
    `OutboundHttpClient::fetch` and caching through `RefreshingCache` when the
    data is shared across requests.
 4. Register the concrete implementation in `bootstrap` and expose it through
-   `AppState`.
-5. Add DTOs and handlers under `api`, keeping handlers limited to extraction,
+   `AppState`, adding a type parameter for the new source.
+5. Add DTOs and handlers in `dut-api`, keeping handlers limited to extraction,
    service invocation, and response mapping.
 6. Add route-level integration tests as a module of `tests/api`, which builds
    a single test binary, and unit tests beside non-trivial domain or
@@ -127,56 +158,31 @@ Do not introduce repository or service abstractions without a real consumer.
 The layer and dependency direction are fixed, while individual abstractions
 should be added when their contracts are known.
 
-## Planned workspace
+## Planned crates
 
-The service is still one package. This section records the agreed direction
-for splitting it into a Cargo workspace once a background monitor and push
-notifications for the MTRGo app are built. None of it exists yet; until a
-step below is carried out, the sections above remain the rules.
-
-### Crates
-
-Crates are split where code is reused or deployed separately, not one per
-layer.
+The workspace will gain two crates once a background monitor and push
+notifications for the MTRGo app are built. This section records the agreed
+direction; neither crate exists yet.
 
 | Crate | Contents | Workspace dependencies |
 | --- | --- | --- |
-| `dut-core` | Domain types, application ports and services, `Snapshot` and `Freshness`, and the service alert events the monitor publishes | none |
-| `dut-telemetry` | Log output and log-field conventions | none |
-| `dut-http` | `OutboundHttpClient` and upstream freshness parsing | telemetry |
-| `dut-upstream` | MTR, Hong Kong Observatory, and Transport Department adapters, `RefreshingCache`, the connectivity check | core, http, telemetry |
 | `dut-monitor` | Polling loops, fusion of sources, publishing service alerts | core, telemetry |
 | `dut-push` | Push notification policy and the OneSignal client | core, http, telemetry |
-| `dut-api` | Axum routes, DTOs, middleware, `ApiError` | core, telemetry |
-| `dut` (binary) | Configuration, wiring, process lifecycle | all |
 
-- `dut-core` has no Axum, Reqwest, or Serde dependency, so the boundary that
-  `AGENTS.md` sets for `domain` becomes a compile error instead of a
-  convention.
-- Shared helpers are grouped by what they depend on, not collected in a
-  general utilities crate. `dut-api` needs the log conventions but not
-  Reqwest; `dut-upstream` and `dut-push` both call external services and must
-  share one `OutboundHttpClient`.
-- `RefreshingCache` stays in `dut-upstream` until a second crate needs it.
+- `dut-upstream` gains Hong Kong Observatory and Transport Department
+  adapters, and `dut-core` gains the service alert events the monitor
+  publishes.
 - Event types live in `dut-core`, so `dut-push` does not depend on
   `dut-monitor`. The binary connects the two with a channel.
 - `dut-monitor` reads its sources through ports in `dut-core`. The binary
   injects the adapters from `dut-upstream`, and tests inject fakes.
+- `dut-push` shares the `OutboundHttpClient` in `dut-http` with the adapters.
 
-### Migration order
+Order:
 
-1. When monitor work starts, convert to a workspace and move the existing code
-   into `dut-core`, `dut-telemetry`, `dut-http`, `dut-upstream`, and
-   `dut-api`, leaving bootstrap in the binary. Behaviour does not change.
-2. Add `dut-monitor`, and let the line status endpoint read the monitor's
+1. Add `dut-monitor`, and let the line status endpoint read the monitor's
    current state.
-3. Add `dut-push` when the OneSignal integration starts.
-
-Across the workspace, `[workspace.dependencies]` pins versions once and
-`[workspace.lints]` shares Clippy settings, including `unreachable_pub`.
-Private modules currently let the compiler report unused code, but it cannot
-do so for items that are `pub` across crates. Keep modules private inside each
-crate and export only what another crate uses.
+2. Add `dut-push` when the OneSignal integration starts.
 
 ### Monitor
 

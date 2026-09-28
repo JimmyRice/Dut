@@ -1,6 +1,6 @@
 //! The composition root and process lifecycle: configuration, construction
 //! of every concrete dependency, and serving the result. Nothing else in the
-//! crate builds infrastructure.
+//! workspace builds infrastructure.
 
 mod config;
 mod error;
@@ -13,16 +13,16 @@ pub use server::run;
 use axum::Router;
 use reqwest::Url;
 
-use crate::{
-    api,
-    application::{line_status::LineStatusService, next_train::NextTrainService},
-    infrastructure::{
-        connectivity::ConnectivityCheck,
-        http_client::{self, UpstreamRequest},
-        mtr::{line_status::MtrLineStatusSource, next_train::MtrNextTrainSource},
-    },
-    state::AppState,
+use dut_api::AppState;
+use dut_core::application::{line_status::LineStatusService, next_train::NextTrainService};
+use dut_http::UpstreamRequest;
+use dut_upstream::{
+    connectivity::ConnectivityCheck,
+    mtr::{line_status::MtrLineStatusSource, next_train::MtrNextTrainSource},
 };
+
+/// Identifies this service to upstreams, e.g. `dut/0.1.0`.
+const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
 /// Builds the complete HTTP application, constructing every concrete
 /// dependency once. Tests call it directly to get a router without binding a
@@ -39,8 +39,8 @@ struct App {
 }
 
 fn assemble(config: &AppConfig) -> Result<App, StartupError> {
-    let outbound_http =
-        http_client::build(config.outbound_http_timeout()).map_err(StartupError::HttpClient)?;
+    let outbound_http = dut_http::build(USER_AGENT, config.outbound_http_timeout())
+        .map_err(StartupError::HttpClient)?;
     let mtr = config.mtr();
 
     let next_trains = MtrNextTrainSource::new(
@@ -71,7 +71,7 @@ fn assemble(config: &AppConfig) -> Result<App, StartupError> {
     );
 
     Ok(App {
-        router: api::router(state),
+        router: dut_api::router(state),
         connectivity,
     })
 }
