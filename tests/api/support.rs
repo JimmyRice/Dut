@@ -23,10 +23,12 @@ pub(crate) struct TestApp {
 impl TestApp {
     pub(crate) async fn start() -> Self {
         let upstream = MockServer::start().await;
-        let config = AppConfig::default().with_mtr_endpoints(
-            format!("{}{NEXT_TRAIN_PATH}", upstream.uri()),
-            format!("{}{LINE_STATUS_PATH}", upstream.uri()),
-        );
+        let config = AppConfig::default()
+            .with_mtr_endpoints(
+                format!("{}{NEXT_TRAIN_PATH}", upstream.uri()),
+                format!("{}{LINE_STATUS_PATH}", upstream.uri()),
+            )
+            .without_proxy();
         let router = build_app(&config).expect("test application should build");
 
         Self { router, upstream }

@@ -17,6 +17,7 @@ pub async fn run(config: AppConfig) -> Result<(), StartupError> {
     info!(
         bind_address = %config.bind_address(),
         outbound_http_timeout_ms = millis(config.outbound_http_timeout()),
+        outbound_proxy = ?config.outbound_proxy(),
         next_train_endpoint = mtr.next_train_endpoint,
         line_status_endpoint = mtr.line_status_endpoint,
         weather_endpoint = config.weather_endpoint(),

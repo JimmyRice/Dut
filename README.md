@@ -92,6 +92,8 @@ curl http://127.0.0.1:3000/api/lines/TKL/stations/TKO/next-trains
 
 服务收到 `SIGTERM` 或 Ctrl-C 后不再接受新请求，等正在处理的请求完成后退出。
 
+访问港铁等上游时，服务会使用 `HTTPS_PROXY`、`HTTP_PROXY` 环境变量或 macOS 系统设置里的代理。macOS 系统代理的"忽略这些主机与域"列表对它不生效，需要直连的主机要写进 `NO_PROXY`。测试不受代理影响，总是直连本机的模拟上游。
+
 ## Docker
 
 镜像分两阶段构建：先在 Alpine 里编译出完全静态链接的 musl 程序，再放进只有 CA 证书和非 root 用户的 [distroless static](https://github.com/GoogleContainerTools/distroless) 基础镜像。整个镜像约 10 MB，里面没有 shell。

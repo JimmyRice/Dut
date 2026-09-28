@@ -39,8 +39,12 @@ struct App {
 }
 
 fn assemble(config: &AppConfig) -> Result<App, StartupError> {
-    let outbound_http = dut_http::build(USER_AGENT, config.outbound_http_timeout())
-        .map_err(StartupError::HttpClient)?;
+    let outbound_http = dut_http::build(
+        USER_AGENT,
+        config.outbound_http_timeout(),
+        config.outbound_proxy(),
+    )
+    .map_err(StartupError::HttpClient)?;
     let mtr = config.mtr();
 
     let next_trains = MtrNextTrainSource::new(
