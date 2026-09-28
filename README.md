@@ -1,9 +1,10 @@
 # Dut（嘟）
 
-Dut 是一个用 Rust 编写的港铁（MTR）实时数据 API，也是 MTRGo App 的数据整合后端。它把港铁的开放数据整理成方便 App 直接使用的 JSON：线路和车站资料、全线路服务状态，以及每个车站接下来几班列车的到站时间。
+Dut 是一个用 Rust 编写的港铁（MTR）实时数据 API，也是 MTRGo App 的数据整合后端。它把港铁的开放数据整理成方便 App 直接使用的 JSON：线路和车站资料、全线路服务状态、每个车站接下来几班列车的到站时间，以及车费、轻铁和无障碍设施这些很少变动的资料。
 
 - **按乘客的视角组织数据**：每个行车方向都附带月台指示牌上的终点站（例如"往 寶琳／康城"），站名同时提供中英文。列车到站只给绝对时间，倒计时由 App 在本地计算。
 - **不给上游添负担**：上游数据缓存在进程内，同一份数据同一时间只会向港铁发一个请求。上游出故障时，先返回标记为 `stale` 的旧数据，不直接报错。
+- **适合 Local First**：车费、轻铁、无障碍设施等资料每天从港铁开放数据平台拉取一次，清洗成结构化 JSON，也可以原样下载 CSV。App 比较索引里的 `revision`，或带 `If-None-Match` 请求，就只在资料变化时才重新下载。
 - **方便排查问题**：每个响应都带 `x-request-id`，服务端日志按请求分组，同一个请求的日志排在一起。
 
 ## 接口
@@ -15,6 +16,14 @@ Dut 是一个用 Rust 编写的港铁（MTR）实时数据 API，也是 MTRGo Ap
 | `GET` | `/api/lines/{line}/stations/{station}/next-trains` | 某条线在某个车站的下几班列车 |
 | `GET` | `/api/stations/{station}/next-trains` | 途经某个车站的所有线路的下几班列车，适合换乘站 |
 | `GET` | `/api/health` | 健康检查，只返回 `200`，不带响应体 |
+| `GET` | `/api/data` | 开放数据索引：各数据集和原始文件的版本 |
+| `GET` | `/api/data/sources/{file}` | 原样返回港铁开放数据的 CSV 文件，例如 `mtr_lines_fares.csv` |
+| `GET` | `/api/data/stations` | 开放数据里的车站和各线路的行车路线 |
+| `GET` | `/api/data/fares` | 重铁车费（港仙） |
+| `GET` | `/api/data/airport-express-fares` | 机场快綫车费 |
+| `GET` | `/api/data/light-rail` | 轻铁车站和路线 |
+| `GET` | `/api/data/light-rail-fares` | 轻铁车费 |
+| `GET` | `/api/data/accessibility` | 无障碍设施目录和各站设施 |
 
 参数、字段说明、缓存行为和错误码见 [HTTP_API.md](HTTP_API.md)。
 
@@ -78,6 +87,7 @@ curl http://127.0.0.1:3000/api/lines/TKL/stations/TKO/next-trains
 | 列车到站 | 跟随港铁 CDN 的 `max-age`，通常 10 秒 | 90 秒内的旧数据仍会返回，标记为 `stale` |
 | 线路状态 | 后台每 30 秒拉取一次，`max-age` 最多 33 秒 | 15 分钟内的旧数据仍会返回，标记为 `stale` |
 | 线路与车站资料 | 编译在服务里，随部署更新 | 不访问上游 |
+| 开放数据（车费、轻铁、无障碍设施等） | 启动时拉取，之后每天一次，`max-age` 最长约一天，带 `ETag` | 失败后 5 分钟重试；30 天内的旧数据仍会返回，标记为 `stale` |
 
 响应头 `Cache-Control: public, max-age=N` 表示数据还有多少秒算新鲜，App 可以直接用它作为下次轮询的间隔。
 
@@ -166,8 +176,8 @@ gh attestation verify dut-x86_64-unknown-linux-musl.tar.gz -R JimmyRice/Dut
 - **日志级别**：用 `RUST_LOG` 设置，默认值是 `info,dut=debug,tower_http=debug`，会输出缓存命中等调试信息。target 按前缀匹配，所以 `dut` 同时覆盖 `dut_upstream`、`dut_api` 等所有 crate。想安静一些可以用 `RUST_LOG=info cargo run`。
 - **在终端里运行时**：同一个请求的所有日志合成一块，开头是一行摘要，并带颜色。设置 `NO_COLOR=1` 可以关闭颜色。
 - **输出到文件或管道时**：每条日志一行，不带颜色，方便 `grep` 和日志收集工具处理。
-- **启动时的连通性检查**：开始监听后，服务会在后台向每个上游各发一个请求，检查能否连上并拿到 JSON，每个上游输出一行 `upstream reachable` 或 `upstream unreachable`（带耗时和错误原因），最后输出一行汇总：`every upstream is reachable` 或 `some upstreams are unreachable`。检查不会阻塞请求，也不会因为上游不通而退出，上游恢复后缓存会自动重试。
-- **后台轮询与监控事件**：线路状态、天文台警告和各线抽查站的 Next Train 在后台定时拉取，日志带 `poll{source=...}`。数据源连续失败时会输出 `source is failing` 或 `source is blind`。每一次数据变化（包括每晚收车时 `normal` 变 `non_service_hours`）都会输出一行 `event: ...`，例如 `event: line status changed`。服务启动后的第一次拉取只作为基线，不输出事件。
+- **启动时的连通性检查**：开始监听后，服务会在后台向每个上游各发一个请求，检查能否连上并拿到 JSON（开放数据是 CSV），每个上游输出一行 `upstream reachable` 或 `upstream unreachable`（带耗时和错误原因），最后输出一行汇总：`every upstream is reachable` 或 `some upstreams are unreachable`。检查不会阻塞请求，也不会因为上游不通而退出，上游恢复后缓存会自动重试。
+- **后台轮询与监控事件**：线路状态、天文台警告、各线抽查站的 Next Train 和港铁开放数据在后台定时拉取，日志带 `poll{source=...}`。开放数据每次拉取后会输出 `cleaned open data`（各数据集的条数）；开放数据与编译进服务的车站资料不一致时会输出 warn 日志，提示运行 `scripts/sync-network.py`。数据源连续失败时会输出 `source is failing` 或 `source is blind`。每一次数据变化（包括每晚收车时 `normal` 变 `non_service_hours`）都会输出一行 `event: ...`，例如 `event: line status changed`。服务启动后的第一次拉取只作为基线，不输出事件。
 
 ## 开发
 
@@ -195,7 +205,7 @@ crates/
   dut-core/          线路、车站、列车到站等业务类型和用例，不依赖任何框架
   dut-telemetry/     日志输出
   dut-http/          共用的出站 HTTP 客户端
-  dut-upstream/      港铁和天文台接口适配、缓存、启动时的连通性检查
+  dut-upstream/      港铁和天文台接口适配、开放数据 CSV 清洗、缓存、启动时的连通性检查
   dut-poll/          后台定时拉取，保存最新数据和数据源健康状态
   dut-monitor/       对比每次拉取的结果，把每个变化作为事件发布
   dut-api/           Axum 路由、响应 DTO、错误映射、请求追踪
@@ -212,4 +222,5 @@ tests/fixtures/      上游样例数据
 
 - 列车到站：[港铁 Next Train API](https://rt.data.gov.hk/v1/transport/mtr/getSchedule.php)，由香港政府的资料一线通（DATA.GOV.HK）发布
 - 线路状态：[港铁线路状态 JSON](https://tnews.mtr.com.hk/alert/ryg_line_status.json)
+- 车站、车费、轻铁、无障碍设施：[港铁开放数据平台](https://opendata.mtr.com.hk/)的 CSV 文件，后台每天拉取一次
 - 天气警告：[香港天文台天气警告资料](https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=warningInfo&lang=en)，后台每分钟拉取一次，目前只用于监控事件，没有接口直接返回

@@ -25,6 +25,9 @@ pub(crate) enum ApiError {
     #[error("the line does not serve the station")]
     StationNotOnLine,
 
+    #[error("unknown open data file")]
+    UnknownSource,
+
     #[error("an upstream service is unavailable")]
     UpstreamUnavailable,
 }
@@ -47,7 +50,8 @@ impl ApiError {
             Self::NotFound { .. }
             | Self::UnknownLine
             | Self::UnknownStation
-            | Self::StationNotOnLine => StatusCode::NOT_FOUND,
+            | Self::StationNotOnLine
+            | Self::UnknownSource => StatusCode::NOT_FOUND,
             Self::UpstreamUnavailable => StatusCode::BAD_GATEWAY,
         }
     }
@@ -58,6 +62,7 @@ impl ApiError {
             Self::UnknownLine => "unknown_line",
             Self::UnknownStation => "unknown_station",
             Self::StationNotOnLine => "station_not_on_line",
+            Self::UnknownSource => "unknown_source",
             Self::UpstreamUnavailable => "upstream_unavailable",
         }
     }
@@ -70,6 +75,7 @@ impl ApiError {
             Self::StationNotOnLine => {
                 "The requested line does not serve the requested station".to_owned()
             }
+            Self::UnknownSource => "No open data file matches the requested name".to_owned(),
             Self::UpstreamUnavailable => "An upstream service is unavailable".to_owned(),
         }
     }

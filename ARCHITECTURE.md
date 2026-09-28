@@ -20,7 +20,7 @@ layer.
 | `dut-core` | domain, application | Domain types and their diffs, monitor events, use cases, their ports (including `Feed` and `Subscriber`), `Snapshot` and `Freshness` | none |
 | `dut-telemetry` | telemetry | Log output and log-field conventions | none |
 | `dut-http` | infrastructure | `OutboundHttpClient` and upstream freshness parsing | telemetry |
-| `dut-upstream` | infrastructure | MTR and Observatory adapters, `RefreshingCache`, the connectivity check | core, http, telemetry |
+| `dut-upstream` | infrastructure | MTR and Observatory adapters, MTR open data cleaning, `RefreshingCache`, the connectivity check | core, http, telemetry |
 | `dut-poll` | background | Polls `Feed`s on a schedule, keeps their latest value and source health | core, telemetry |
 | `dut-monitor` | background | Watches polled feeds and publishes each change as a `MonitorEvent` | core, poll |
 | `dut-api` | api | Axum routes, DTOs, middleware, `ApiError`, `AppState` | core, telemetry |
@@ -92,7 +92,7 @@ crates/
   dut-telemetry/  console, fields (log-field conventions),
                   request_blocks (terminal view, one block per request)
   dut-http/       client (OutboundHttpClient), freshness
-  dut-upstream/   cache, connectivity, mtr/{next_train, line_status}, hko/warnings
+  dut-upstream/   cache, connectivity, mtr/{next_train, line_status, open_data}, hko/warnings
   dut-poll/       poller (spawn), schedule, health, state, handle (FeedHandle),
                   line_status, reference_data (the ports, served from polled feeds)
   dut-monitor/    monitor (spawn, MonitorHandle), watcher, delivery (runs a Subscriber),
@@ -130,9 +130,9 @@ The `dut` library exports only what `main` and the route tests use:
 
 Upstream data reaches the API in one of two ways. Next Train boards are read
 per request through `RefreshingCache` in `dut-upstream`, a generic in-memory
-cache with one entry per key. Whole-document feeds, such as line status and
-weather warnings, are polled on a schedule by `dut-poll` (see "Polled
-feeds"). The principle for both is to **cache absolute facts and derive
+cache with one entry per key. Whole-document feeds, such as line status,
+weather warnings, and MTR open data, are polled on a schedule by `dut-poll`
+(see "Polled feeds"). The principle for both is to **cache absolute facts and derive
 relative values at the edge**:
 
 - Next Train arrivals are stored and returned as absolute times
@@ -167,7 +167,33 @@ only to localize a special arrangement notice.
 
 API responses carry `Cache-Control: public, max-age=<remaining freshness>`,
 or `no-cache` when stale, so HTTP caches downstream can safely add another
-layer.
+layer. Every response is gzipped for clients that accept it.
+
+### Open data
+
+MTR open data (the station list, fares, Light Rail, and barrier-free
+facilities) is seven CSV files that change a few times a year, and MTRGo
+keeps a local copy. The design follows from that:
+
+- **One poll, one consistent set.** `MtrOpenDataFeed` reads all seven files
+  together, once at startup and then daily, retrying a failure after five
+  minutes. A poll succeeds only if every file downloads and cleans, so the
+  datasets always agree with each other and with the files, which are kept
+  byte for byte and served at `/api/data/sources/{file}`.
+- **Clean at the boundary.** Station IDs become station codes, fares become
+  whole cents, and encoding defects are fixed once in the adapter. Rows that
+  name something unresolvable are counted and logged; malformed values fail
+  the poll, keeping the last good set.
+- **Revisions, not timestamps.** Each dataset's `Revision` is a hash of its
+  cleaned value, and each file's a hash of its bytes, so a revision changes
+  exactly when what a client receives changes. Responses carry it as a weak
+  `ETag` (datasets also include the service version, since a release may
+  change the JSON), answer `If-None-Match` with `304`, and list it in the
+  `/api/data` index so the app checks everything in one request.
+- **The compiled network stays authoritative for Next Train.** The station
+  list is served as published, and each poll logs where it disagrees with
+  the compiled network; `scripts/sync-network.py` turns the published list
+  into Rust for review.
 
 At startup, `dut_upstream::connectivity::ConnectivityCheck` requests one
 document from every upstream in the background and logs whether each could be
@@ -187,7 +213,7 @@ slow upstream never delays another. The feed adapter holds no cache; the
 poller keeps the last successful value, and a `FeedHandle` reads it.
 
 - **Interval.** Line status is polled every 30 seconds, weather warnings and
-  the sampled Next Train boards every 60. The interval uses
+  the sampled Next Train boards every 60, and MTR open data once a day. The interval uses
   `MissedTickBehavior::Delay`, so a poll that overruns delays the next one
   rather than being followed by a burst of catch-up requests to a struggling
   upstream.
@@ -196,8 +222,8 @@ poller keeps the last successful value, and a `FeedHandle` reads it.
   endpoint's `max-age` is therefore at most 33 seconds, and `"stale": true`
   only appears when polls fail.
 - **Stale-if-error.** A failed poll keeps the last value. It is served,
-  marked stale, for 15 minutes past its freshness, then the endpoint returns
-  `502`.
+  marked stale, for 15 minutes past its freshness (30 days for open data),
+  then the endpoint returns `502`.
 - **Retry.** A feed polled rarely retries a failed poll sooner than its
   interval (`retry_after`), so one failure does not leave it without data
   until the next scheduled poll. The real-time feeds are polled often
@@ -205,8 +231,8 @@ poller keeps the last successful value, and a `FeedHandle` reads it.
 - **First poll.** A request that arrives before the first poll finishes waits
   for it, so requests made just after startup do not fail.
 - **Source health.** Each poller tracks `starting`, `healthy`, `failing`, and
-  `blind` (no success for 2 minutes for line status, 5 minutes for the
-  others), and logs each transition.
+  `blind` (no success for 2 minutes for line status, 48 hours for open data,
+  5 minutes for the others), and logs each transition.
 
 Upstream's `max-age=5` on the line status feed is ignored. The feed is only
 rebuilt when a line's status changes, so its `lastBuildDate` is not a

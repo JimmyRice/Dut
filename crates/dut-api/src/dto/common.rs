@@ -6,10 +6,14 @@
 use jiff::Timestamp;
 use serde::{Serialize, Serializer};
 
-use dut_core::domain::{
-    localized::Localized,
-    network::{Direction, Line, Station, StationCode},
-    time::HONG_KONG,
+use dut_core::{
+    application::source::Snapshot,
+    domain::{
+        localized::Localized,
+        network::{Direction, Line, Station, StationCode},
+        reference::{Dataset, ReferenceData},
+        time::HONG_KONG,
+    },
 };
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -23,6 +27,15 @@ impl<'a> From<Localized<&'a str>> for LocalizedText<'a> {
         Self {
             en: text.en,
             tc: text.tc,
+        }
+    }
+}
+
+impl<'a> From<&'a Localized<String>> for LocalizedText<'a> {
+    fn from(text: &'a Localized<String>) -> Self {
+        Self {
+            en: &text.en,
+            tc: &text.tc,
         }
     }
 }
@@ -88,6 +101,52 @@ impl Serialize for HktTime {
     }
 }
 
+/// When a dataset was published and fetched, which every dataset response
+/// opens with.
+#[derive(Clone, Copy, Debug, Serialize)]
+pub(crate) struct DatasetMeta {
+    /// When the MTR last changed the files behind the dataset; `null` when
+    /// the portal did not say.
+    pub updated_at: Option<HktTime>,
+    /// When this service fetched them.
+    pub fetched_at: HktTime,
+    pub stale: bool,
+}
+
+impl DatasetMeta {
+    pub(crate) fn new<T>(snapshot: &Snapshot<ReferenceData>, dataset: &Dataset<T>) -> Self {
+        Self {
+            updated_at: dataset.updated_at().map(HktTime),
+            fetched_at: HktTime(snapshot.fetched_at()),
+            stale: snapshot.freshness().is_stale(),
+        }
+    }
+}
+
+/// Serializes a borrowed slice as a JSON array, converting each item as it
+/// is written instead of collecting the converted items first. The MTR fare
+/// table has over nine thousand trips.
+pub(crate) struct MappedSeq<'a, T, M> {
+    items: &'a [T],
+    map: M,
+}
+
+impl<'a, T, M> MappedSeq<'a, T, M> {
+    pub(crate) const fn new(items: &'a [T], map: M) -> Self {
+        Self { items, map }
+    }
+}
+
+impl<'a, T, M, B> Serialize for MappedSeq<'a, T, M>
+where
+    M: Fn(&'a T) -> B,
+    B: Serialize,
+{
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.items.iter().map(&self.map))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -99,6 +158,14 @@ mod tests {
         let json = serde_json::to_string(&HktTime(timestamp)).expect("time should serialize");
 
         assert_eq!(json, r#""2026-09-27T22:36:36+08:00""#);
+    }
+
+    #[test]
+    fn mapped_sequences_convert_each_item() {
+        let json = serde_json::to_string(&MappedSeq::new(&[1, 2, 3], |n: &i32| n * 10))
+            .expect("sequence should serialize");
+
+        assert_eq!(json, "[10,20,30]");
     }
 
     #[test]

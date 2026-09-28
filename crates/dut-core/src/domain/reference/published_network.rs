@@ -81,7 +81,8 @@ impl PublishedNetwork {
         drift
     }
 
-    fn station(&self, code: StationCode) -> Option<&PublishedStation> {
+    /// A station as open data names it.
+    pub fn station(&self, code: StationCode) -> Option<&PublishedStation> {
         self.stations
             .binary_search_by_key(&code, |station| station.code)
             .ok()

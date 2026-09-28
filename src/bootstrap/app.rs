@@ -5,12 +5,17 @@ use axum::Router;
 use reqwest::Url;
 
 use dut_api::AppState;
-use dut_core::application::{line_status::LineStatusService, next_train::NextTrainService};
+use dut_core::application::{
+    line_status::LineStatusService, next_train::NextTrainService,
+    reference_data::ReferenceDataService,
+};
 use dut_monitor::NextTrainSignalFeed;
 use dut_upstream::{
     connectivity::ConnectivityCheck,
     hko::warnings::HkoWarningFeed,
-    mtr::{line_status::MtrLineStatusFeed, next_train::MtrNextTrainSource},
+    mtr::{
+        line_status::MtrLineStatusFeed, next_train::MtrNextTrainSource, open_data::MtrOpenDataFeed,
+    },
 };
 
 use super::{AppConfig, StartupError};
@@ -58,6 +63,15 @@ pub(super) fn assemble(config: &AppConfig) -> Result<App, StartupError> {
         parse_endpoint("line_status_endpoint", &mtr.line_status_endpoint)?,
         mtr.request_timeout,
     );
+    let open_data_feed = MtrOpenDataFeed::new(
+        outbound_http.clone(),
+        &parse_endpoint("open_data_endpoint", &mtr.open_data_endpoint)?,
+        mtr.open_data_timeout,
+    )
+    .map_err(|source| StartupError::InvalidEndpoint {
+        name: "open_data_endpoint",
+        source,
+    })?;
     let weather_warnings_feed = HkoWarningFeed::new(
         outbound_http.clone(),
         parse_endpoint("weather_warnings_endpoint", &hko.warnings_endpoint)?,
@@ -69,6 +83,7 @@ pub(super) fn assemble(config: &AppConfig) -> Result<App, StartupError> {
             next_train_source.probe(),
             line_status_feed.probe(),
             weather_warnings_feed.probe(),
+            open_data_feed.probe(),
         ],
     );
 
@@ -83,7 +98,13 @@ pub(super) fn assemble(config: &AppConfig) -> Result<App, StartupError> {
     // events is attached here too, with `monitor.attach(subscriber)`.
     let _monitor = dut_monitor::spawn(&line_status, &weather_warnings, &next_train_signals);
 
-    let state = AppState::new(next_trains, LineStatusService::new(line_status));
+    let reference_data = dut_poll::spawn(open_data_feed, polling.open_data);
+
+    let state = AppState::new(
+        next_trains,
+        LineStatusService::new(line_status),
+        ReferenceDataService::new(reference_data),
+    );
 
     Ok(App {
         router: dut_api::router(state),
