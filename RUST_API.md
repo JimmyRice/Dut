@@ -318,6 +318,11 @@ these types around.
 A valid `StationCode` is not necessarily a known station: check with
 `Station::find` or `Line::serves`.
 
+The `STATIONS` table in `network/station.rs` sits between `GENERATED`
+markers: `scripts/sync-network.py --write` regenerates it from MTR open data
+through a running service. Line layouts and termini in `network/line.rs` are
+maintained by hand.
+
 ### reference
 
 `dut_core::domain::reference`: MTR open data, read by `MtrOpenDataFeed`.

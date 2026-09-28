@@ -87,9 +87,12 @@ impl Station {
     }
 }
 
-/// Stations listed in the Next Train API data dictionary (v1.7), sorted by
-/// code so [`Station::find`] can binary search. English names follow the data dictionary, with its "Price Edward"
-/// typo corrected.
+/// Every station this service knows, sorted by code so [`Station::find`] can
+/// binary search. Names follow MTR open data.
+///
+/// `scripts/sync-network.py` regenerates the table from a running service's
+/// `GET /api/data/stations`, keeping stations open data leaves out.
+// BEGIN GENERATED STATIONS
 const STATIONS: &[Station] = &[
     Station::new("ADM", "Admiralty", "金鐘"),
     Station::new("AIR", "Airport", "機場"),
@@ -148,6 +151,7 @@ const STATIONS: &[Station] = &[
     Station::new("POA", "Po Lam", "寶琳"),
     Station::new("PRE", "Prince Edward", "太子"),
     Station::new("QUB", "Quarry Bay", "鰂魚涌"),
+    // Missing from MTR open data's station list; it opens only on race days.
     Station::new("RAC", "Racecourse", "馬場"),
     Station::new("SHM", "Shek Mun", "石門"),
     Station::new("SHS", "Sheung Shui", "上水"),
@@ -190,6 +194,7 @@ const STATIONS: &[Station] = &[
     Station::new("YMT", "Yau Ma Tei", "油麻地"),
     Station::new("YUL", "Yuen Long", "元朗"),
 ];
+// END GENERATED STATIONS
 
 #[cfg(test)]
 mod tests {
