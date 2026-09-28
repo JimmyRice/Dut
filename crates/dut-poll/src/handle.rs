@@ -172,6 +172,7 @@ mod tests {
     const SCHEDULE: Schedule = Schedule {
         interval: seconds(30),
         first_poll_after: Duration::ZERO,
+        retry_after: seconds(30),
         fresh_for: seconds(33),
         stale_if_error: seconds(900),
         blind_after: seconds(120),

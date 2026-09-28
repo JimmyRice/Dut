@@ -9,6 +9,11 @@ pub struct Schedule {
     pub interval: Duration,
     /// Delay before the first poll; zero polls as soon as polling starts.
     pub first_poll_after: Duration,
+    /// Delay before the next poll after a failed one. A feed read once a day
+    /// retries within minutes, so one failure does not leave it without data
+    /// until the next day; a value at or above `interval` keeps the regular
+    /// schedule.
+    pub retry_after: Duration,
     /// How long a value counts as fresh after it was read. The interval plus
     /// the request timeout keeps a value fresh while the next poll is still
     /// in flight.
@@ -54,6 +59,7 @@ mod tests {
     const SCHEDULE: Schedule = Schedule {
         interval: seconds(30),
         first_poll_after: Duration::ZERO,
+        retry_after: seconds(30),
         fresh_for: seconds(33),
         stale_if_error: seconds(900),
         blind_after: seconds(120),

@@ -221,8 +221,10 @@ held.
 `FeedHandle<NetworkStatus>` implements `LineStatusSource`, which is how the
 line status endpoint serves the polled value.
 
-`dut_poll::Schedule` sets `interval`, `first_poll_after`, `fresh_for`,
-`stale_if_error`, and `blind_after`; see "Polled feeds" in ARCHITECTURE.md.
+`dut_poll::Schedule` sets `interval`, `first_poll_after`, `retry_after`,
+`fresh_for`, `stale_if_error`, and `blind_after`; see "Polled feeds" in
+ARCHITECTURE.md. A `retry_after` shorter than `interval` polls again that soon
+after a failure; set it equal to `interval` to keep the regular schedule.
 
 ### NextTrainService
 
