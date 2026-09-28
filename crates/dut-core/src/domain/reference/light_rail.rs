@@ -1,4 +1,4 @@
-use std::{fmt, str::FromStr};
+use std::{cmp::Ordering, fmt, str::FromStr};
 
 use thiserror::Error;
 
@@ -61,12 +61,34 @@ impl fmt::Debug for StopCode {
 pub struct InvalidStopCode;
 
 /// A Light Rail route as trains and stops show it, such as `505` or `614P`.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+///
+/// Routes order as route maps list them: by number, then suffix, so `614`
+/// comes before `614P` and both before `615`.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct RouteNumber(Box<str>);
 
 impl RouteNumber {
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// The leading number and the suffix after it: `614P` is `(614, "P")`.
+    fn parts(&self) -> (u32, &str) {
+        let digits = self.0.bytes().take_while(u8::is_ascii_digit).count();
+        let (number, suffix) = self.0.split_at_checked(digits).unwrap_or((&self.0, ""));
+        (number.parse().unwrap_or(u32::MAX), suffix)
+    }
+}
+
+impl Ord for RouteNumber {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.parts().cmp(&other.parts())
+    }
+}
+
+impl PartialOrd for RouteNumber {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -110,7 +132,7 @@ pub struct LightRailRoute {
 pub struct LightRailNetwork {
     /// Ordered by number.
     pub stops: Vec<Stop>,
-    /// In the order the MTR lists them.
+    /// Ordered by route number.
     pub routes: Vec<LightRailRoute>,
 }
 
@@ -122,7 +144,7 @@ impl LightRailNetwork {
             .and_then(|index| self.stops.get(index))
     }
 
-    /// The routes that call at a stop, in the order the MTR lists routes.
+    /// The routes that call at a stop, by route number.
     pub fn routes_serving(&self, id: StopId) -> impl Iterator<Item = &RouteNumber> {
         self.routes
             .iter()
@@ -165,6 +187,18 @@ mod tests {
                 "{input}"
             );
         }
+    }
+
+    #[test]
+    fn orders_route_numbers_as_route_maps_do() {
+        let mut numbers: Vec<RouteNumber> = ["615P", "99", "614P", "761P", "614", "505"]
+            .iter()
+            .map(|number| number.parse().expect("route number should parse"))
+            .collect();
+        numbers.sort();
+
+        let numbers: Vec<_> = numbers.iter().map(RouteNumber::as_str).collect();
+        assert_eq!(numbers, ["99", "505", "614", "614P", "615P", "761P"]);
     }
 
     #[test]

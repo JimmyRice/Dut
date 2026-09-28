@@ -3,9 +3,10 @@
 use std::{error::Error, time::Duration};
 
 use bytes::Bytes;
+use jiff::Timestamp;
 use reqwest::{
     StatusCode, Url,
-    header::{AGE, CACHE_CONTROL, HeaderMap},
+    header::{AGE, CACHE_CONTROL, HeaderMap, LAST_MODIFIED},
 };
 use serde::de::DeserializeOwned;
 use thiserror::Error;
@@ -116,6 +117,7 @@ impl OutboundHttpClient {
             let elapsed_ms = millis(started.elapsed());
             let cache_control = header_text(&headers, CACHE_CONTROL.as_str());
             let age = header_text(&headers, AGE.as_str());
+            let last_modified = header_text(&headers, LAST_MODIFIED.as_str());
 
             if !status.is_success() {
                 warn!(
@@ -133,6 +135,7 @@ impl OutboundHttpClient {
                 bytes = body.len(),
                 cache_control,
                 age,
+                last_modified,
                 "upstream request finished"
             );
             Ok(UpstreamResponse {
@@ -165,6 +168,16 @@ impl UpstreamResponse {
     /// How much longer upstream considers this response fresh.
     pub fn ttl_hint(&self) -> Option<Duration> {
         freshness::ttl_hint(&self.headers)
+    }
+
+    /// When upstream says the document last changed, from `Last-Modified`.
+    pub fn last_modified(&self) -> Option<Timestamp> {
+        freshness::last_modified(&self.headers)
+    }
+
+    /// The body as received, for documents that are not JSON, such as CSV.
+    pub fn body(&self) -> &Bytes {
+        &self.body
     }
 }
 

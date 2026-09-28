@@ -2,7 +2,11 @@
 
 use std::time::Duration;
 
-use reqwest::header::{AGE, CACHE_CONTROL, HeaderMap};
+use jiff::{Timestamp, fmt::rfc2822::DateTimeParser};
+use reqwest::header::{AGE, CACHE_CONTROL, HeaderMap, LAST_MODIFIED};
+
+/// HTTP dates (RFC 9110) are the RFC 2822 format with `GMT` as the offset.
+static HTTP_DATE: DateTimeParser = DateTimeParser::new();
 
 /// How much longer upstream considers its response fresh.
 ///
@@ -39,6 +43,13 @@ pub(crate) fn ttl_hint(headers: &HeaderMap) -> Option<Duration> {
         .unwrap_or(0);
 
     Some(Duration::from_secs(lifetime.saturating_sub(age)))
+}
+
+/// When upstream says the document last changed, from `Last-Modified`.
+/// Returns `None` when the header is missing or is not an HTTP date.
+pub(crate) fn last_modified(headers: &HeaderMap) -> Option<Timestamp> {
+    let value = headers.get(LAST_MODIFIED)?.to_str().ok()?;
+    HTTP_DATE.parse_timestamp(value.trim()).ok()
 }
 
 #[cfg(test)]
@@ -89,5 +100,28 @@ mod tests {
         assert_eq!(ttl_hint(&HeaderMap::new()), None);
         assert_eq!(ttl_hint(&headers("public", None)), None);
         assert_eq!(ttl_hint(&headers("max-age=soon", None)), None);
+    }
+
+    #[test]
+    fn reads_the_last_modified_http_date() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            LAST_MODIFIED,
+            HeaderValue::from_static("Thu, 02 Apr 2026 17:02:50 GMT"),
+        );
+
+        assert_eq!(
+            last_modified(&headers).map(|time| time.to_string()),
+            Some("2026-04-02T17:02:50Z".to_owned())
+        );
+    }
+
+    #[test]
+    fn ignores_a_missing_or_malformed_last_modified() {
+        let mut headers = HeaderMap::new();
+        assert_eq!(last_modified(&headers), None);
+
+        headers.insert(LAST_MODIFIED, HeaderValue::from_static("yesterday"));
+        assert_eq!(last_modified(&headers), None);
     }
 }

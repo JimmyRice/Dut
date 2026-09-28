@@ -14,6 +14,7 @@ use dut_core::{
 };
 use dut_http::{OutboundHttpClient, UpstreamError, UpstreamRequest};
 
+use crate::connectivity::Probe;
 use crate::mtr::line_status::dto::{LineStatusDataError, LineStatusFeed};
 
 const UPSTREAM: &str = "mtr.line_status";
@@ -40,8 +41,8 @@ impl MtrLineStatusFeed {
 
     /// The request the startup connectivity check sends: the same request
     /// every poll makes.
-    pub fn probe(&self) -> UpstreamRequest {
-        self.request()
+    pub fn probe(&self) -> Probe {
+        Probe::json(self.request())
     }
 
     fn request(&self) -> UpstreamRequest {

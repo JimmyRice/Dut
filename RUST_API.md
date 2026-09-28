@@ -365,6 +365,8 @@ yourself.
 | `UpstreamRequest { upstream, url, timeout }` | `upstream` is a short stable log name such as `hko.warnings` |
 | `UpstreamResponse::json::<T>()` | Decodes the body, logging an excerpt if it is not the expected JSON |
 | `UpstreamResponse::ttl_hint()` | Upstream's remaining freshness from `Cache-Control` and `Age` |
+| `UpstreamResponse::last_modified()` | When upstream says the document last changed, from `Last-Modified` |
+| `UpstreamResponse::body()` | The raw body, for documents that are not JSON, such as CSV |
 | `UpstreamError` | `Transport` or `Status`; wrap it in the adapter's own error type |
 
 Bootstrap builds the client with `dut_http::build(user_agent, timeout, proxy)`
@@ -379,10 +381,12 @@ and hands clones to adapters.
 | `mtr::next_train::MtrNextTrainSource::new(http, endpoint, timeout, CachePolicy)` | `NextTrainSource`, cached per line and station |
 | `mtr::line_status::MtrLineStatusFeed::new(http, endpoint, timeout)` | `Feed<Item = NetworkStatus>` |
 | `hko::warnings::HkoWarningFeed::new(http, endpoint, timeout)` | `Feed<Item = WeatherWarnings>` |
+| `mtr::open_data::MtrOpenDataFeed::new(http, &base_url, timeout)?` | `Feed<Item = ReferenceData>`: reads the seven portal files together and cleans them. `base_url` ends in `/` |
 | `connectivity::ConnectivityCheck::new(http, probes)` | Probes every upstream once at startup and logs the outcome |
+| `connectivity::Probe::json(request)`, `Probe::csv(request)` | A probe and the document a real answer is, so a captive portal's HTML page counts as unreachable |
 | `CachePolicy` | Freshness, stale-while-revalidate, stale-if-error, and backoff for request-driven caches |
 
-Every adapter offers `probe()`, the request the connectivity check sends.
+Every adapter offers `probe()`, the `Probe` the connectivity check sends.
 `RefreshingCache` is private to `dut-upstream`.
 
 ## Telemetry and conventions
