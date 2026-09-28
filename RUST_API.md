@@ -386,7 +386,7 @@ and hands clones to adapters.
 | `mtr::next_train::MtrNextTrainSource::new(http, endpoint, timeout, CachePolicy)` | `NextTrainSource`, cached per line and station |
 | `mtr::line_status::MtrLineStatusFeed::new(http, endpoint, timeout)` | `Feed<Item = NetworkStatus>` |
 | `hko::warnings::HkoWarningFeed::new(http, endpoint, timeout)` | `Feed<Item = WeatherWarnings>` |
-| `mtr::open_data::MtrOpenDataFeed::new(http, &base_url, timeout)?` | `Feed<Item = ReferenceData>`: reads the seven portal files together and cleans them. `base_url` ends in `/` |
+| `mtr::open_data::MtrOpenDataFeed::new(http, &base_url, timeout)?` | `Feed<Item = ReferenceData>`: reads the seven portal files in one poll, one after another over one connection, and cleans them. `base_url` ends in `/` |
 | `connectivity::ConnectivityCheck::new(http, probes)` | Probes every upstream once at startup and logs the outcome |
 | `connectivity::Probe::json(request)`, `Probe::csv(request)` | A probe and the document a real answer is, so a captive portal's HTML page counts as unreachable |
 | `CachePolicy` | Freshness, stale-while-revalidate, stale-if-error, and backoff for request-driven caches |
