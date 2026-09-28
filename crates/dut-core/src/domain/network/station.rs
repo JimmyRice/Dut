@@ -2,7 +2,7 @@ use std::{fmt, str::FromStr};
 
 use thiserror::Error;
 
-use crate::domain::localized::Localized;
+use crate::domain::{localized::Localized, three_letters::ThreeLetters};
 
 /// A three-letter MTR station code such as `TKO`.
 ///
@@ -10,7 +10,7 @@ use crate::domain::localized::Localized;
 /// hash, and safe to use as a cache key. A syntactically valid code is not
 /// necessarily a known station; use [`Station::find`] for that.
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct StationCode([u8; 3]);
+pub struct StationCode(ThreeLetters);
 
 impl StationCode {
     /// Builds a code from a literal in a static table.
@@ -18,35 +18,15 @@ impl StationCode {
     /// Only call this in `const` items: an invalid literal then fails the
     /// build instead of panicking at runtime.
     pub const fn from_static(code: &str) -> Self {
-        match Self::from_ascii(code.as_bytes()) {
-            Some(code) => code,
+        match ThreeLetters::parse(code.as_bytes()) {
+            Some(letters) => Self(letters),
             None => panic!("station code literals must be three ASCII letters"),
         }
     }
 
     /// Returns the code as an uppercase string slice.
     pub fn as_str(&self) -> &str {
-        // The constructor only admits ASCII letters, so this never falls back.
-        std::str::from_utf8(&self.0).unwrap_or_default()
-    }
-
-    const fn from_ascii(bytes: &[u8]) -> Option<Self> {
-        let [first, second, third] = bytes else {
-            return None;
-        };
-        let code = [
-            first.to_ascii_uppercase(),
-            second.to_ascii_uppercase(),
-            third.to_ascii_uppercase(),
-        ];
-        if code[0].is_ascii_uppercase()
-            && code[1].is_ascii_uppercase()
-            && code[2].is_ascii_uppercase()
-        {
-            Some(Self(code))
-        } else {
-            None
-        }
+        self.0.as_str()
     }
 }
 
@@ -55,7 +35,9 @@ impl FromStr for StationCode {
     type Err = InvalidStationCode;
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
-        Self::from_ascii(input.as_bytes()).ok_or(InvalidStationCode)
+        ThreeLetters::parse(input.as_bytes())
+            .map(Self)
+            .ok_or(InvalidStationCode)
     }
 }
 
@@ -91,8 +73,8 @@ impl Station {
             .and_then(|index| STATIONS.get(index))
     }
 
-    /// Every known station, ordered by code.
-    #[cfg(test)]
+    /// Every station compiled into this service, ordered by code. Adapters
+    /// use it to match what upstreams publish against this network.
     pub fn all() -> &'static [Self] {
         STATIONS
     }
