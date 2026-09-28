@@ -20,11 +20,6 @@ RUN apk add --no-cache clang lld
 ARG TARGETPLATFORM
 RUN xx-apk add --no-cache gcc musl-dev
 
-# Release settings for the image only, so local release builds stay quick.
-ENV CARGO_PROFILE_RELEASE_LTO=true \
-    CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 \
-    CARGO_PROFILE_RELEASE_STRIP=symbols
-
 WORKDIR /src
 # The sources are bind-mounted rather than copied, and the registry and
 # target directory live in cache mounts, so a code change recompiles only
@@ -36,8 +31,8 @@ RUN --mount=type=bind,source=Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=crates,target=crates \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target,id=dut-target-${TARGETPLATFORM} \
-    xx-cargo build --release --locked --bin dut \
- && binary="target/$(xx-cargo --print-target-triple)/release/dut" \
+    xx-cargo build --profile dist --locked --bin dut \
+ && binary="target/$(xx-cargo --print-target-triple)/dist/dut" \
  && xx-verify --static "$binary" \
  && cp "$binary" /usr/local/bin/dut
 

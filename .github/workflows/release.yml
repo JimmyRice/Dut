@@ -22,10 +22,6 @@ env:
   CARGO_TERM_COLOR: always
   # Keep in step with RUST_VERSION in the Dockerfile.
   RUSTUP_TOOLCHAIN: "1.98"
-  # The release settings the Dockerfile applies to the image.
-  CARGO_PROFILE_RELEASE_LTO: "true"
-  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
-  CARGO_PROFILE_RELEASE_STRIP: symbols
 
 jobs:
   check-version:
@@ -111,19 +107,20 @@ jobs:
           echo "CC_${TARGET//-/_}=musl-gcc" >> "$GITHUB_ENV"
 
       - name: Build
-        run: cargo build --release --locked --target "$TARGET" --bin dut
+        # The same dist profile the Dockerfile builds the image with.
+        run: cargo build --profile dist --locked --target "$TARGET" --bin dut
 
       - name: Package
         id: package
         run: |
           mkdir dist
-          release="target/$TARGET/release"
+          built="target/$TARGET/dist"
           if [[ "$RUNNER_OS" == Windows ]]; then
             archive="dist/dut-$TARGET.zip"
-            7z a -tzip "$archive" "./$release/dut.exe"
+            7z a -tzip "$archive" "./$built/dut.exe"
           else
             archive="dist/dut-$TARGET.tar.gz"
-            tar -czf "$archive" -C "$release" dut
+            tar -czf "$archive" -C "$built" dut
           fi
           echo "archive=$archive" >> "$GITHUB_OUTPUT"
 
