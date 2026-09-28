@@ -14,6 +14,7 @@ Dut 是一个用 Rust 编写的港铁（MTR）实时数据 API，也是 MTRGo Ap
 | `GET` | `/api/lines/status` | 全线路服务状态（正常、延误、受阻等） |
 | `GET` | `/api/lines/{line}/stations/{station}/next-trains` | 某条线在某个车站的下几班列车 |
 | `GET` | `/api/stations/{station}/next-trains` | 途经某个车站的所有线路的下几班列车，适合换乘站 |
+| `GET` | `/api/health` | 健康检查，只返回 `200`，不带响应体 |
 
 参数、字段说明、缓存行为和错误码见 [HTTP_API.md](HTTP_API.md)。
 
@@ -112,7 +113,7 @@ docker run --rm -p 3000:3000 dut
 docker buildx build --platform linux/amd64,linux/arm64 -t dut .
 ```
 
-镜像里没有 `curl`，所以没有 `HEALTHCHECK`。要做健康检查，可以让编排系统直接请求 `/api/lines`，这个接口不访问上游。
+镜像里没有 `curl`，所以没有 `HEALTHCHECK`。要做健康检查，可以让编排系统或负载均衡请求 `GET /api/health`：它只返回 `200`、不带响应体，不访问上游，也不记入请求日志。
 
 构建好的镜像发布在 GitHub Container Registry，同时提供 amd64 和 arm64 版本。仓库是私有的，拉取前需要先用有 `read:packages` 权限的 token 执行 `docker login ghcr.io`：
 
