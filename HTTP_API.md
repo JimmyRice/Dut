@@ -13,6 +13,7 @@ Dut 是 MTRGo App 的数据整合后端。本文档记录全部对外 HTTP 接�
 - [2. 获取全线路服务状态](#2-获取全线路服务状态)
 - [3. 获取单线单站列车到站](#3-获取单线单站列车到站)
 - [4. 获取车站所有线路的列车到站](#4-获取车站所有线路的列车到站)
+- [5. 健康检查](#5-健康检查)
 - [错误码](#错误码)
 - [附录 A：线路代码](#附录-a线路代码)
 - [附录 B：车站代码](#附录-b车站代码)
@@ -26,9 +27,9 @@ Dut 是 MTRGo App 的数据整合后端。本文档记录全部对外 HTTP 接�
 |---|---|
 | Base URL | `http://127.0.0.1:3000`（本地默认值，见 `src/bootstrap/config.rs`） |
 | 路径前缀 | 所有接口都在 `/api` 下 |
-| HTTP 方法 | 目前只有 `GET` |
+| HTTP 方法 | 目前只有 `GET`（健康检查也接受 `HEAD`） |
 | 鉴权 | 暂无 |
-| 响应格式 | `application/json`，UTF-8 |
+| 响应格式 | `application/json`，UTF-8。健康检查除外，它不返回响应体 |
 | 数据来源 | [MTR Next Train API](https://rt.data.gov.hk/v1/transport/mtr/getSchedule.php)、[MTR 线路状态 JSON](https://tnews.mtr.com.hk/alert/ryg_line_status.json) |
 
 ---
@@ -77,7 +78,7 @@ Dut 是 MTRGo App 的数据整合后端。本文档记录全部对外 HTTP 接�
 
 ### 请求 ID
 
-每个响应都带有 `x-request-id` 响应头（UUID），服务端日志里的每一行也都带这个 ID，排查问题时可以据此定位。客户端也可以自己在请求头里带上 `x-request-id`，服务端会沿用并原样返回。
+除健康检查外，每个响应都带有 `x-request-id` 响应头（UUID），服务端日志里的每一行也都带这个 ID，排查问题时可以据此定位。客户端也可以自己在请求头里带上 `x-request-id`，服务端会沿用并原样返回。
 
 ### 错误格式
 
@@ -104,6 +105,7 @@ Dut 是 MTRGo App 的数据整合后端。本文档记录全部对外 HTTP 接�
 | `GET` | `/api/lines/status` | 获取全线路服务状态（正常、延误、受阻等） | 港铁线路状态 JSON |
 | `GET` | `/api/lines/{line}/stations/{station}/next-trains` | 获取某条线在某个车站的下几班列车 | 港铁 Next Train API |
 | `GET` | `/api/stations/{station}/next-trains` | 获取途经某个车站的所有线路的下几班列车（适合换乘站） | 港铁 Next Train API |
+| `GET` | `/api/health` | 健康检查，只返回 `200`，不返回响应体 | 不访问上游 |
 
 ---
 
@@ -610,6 +612,56 @@ curl http://127.0.0.1:3000/api/stations/ADM/next-trains
 
 ---
 
+## 5. 健康检查
+
+```
+GET /api/health
+```
+
+供负载均衡、容器编排和监控服务探测服务是否存活。只要进程还在处理 HTTP 请求，就返回 `200 OK`，不返回响应体。也接受 `HEAD` 请求，结果相同。
+
+- **不访问上游，也不读取任何数据。** 港铁或天文台出故障时它照样返回 `200`，编排系统不会因此重启一个正常的进程。上游的可用性看服务端日志里的数据源健康状态。
+- **返回 `200` 而不是 `204`。** AWS ALB、Google Cloud 负载均衡和 Cloudflare 的健康检查默认只认 `200`。
+
+### 参数
+
+无。
+
+### 请求示例
+
+```bash
+curl -i http://127.0.0.1:3000/api/health
+```
+
+### 响应示例
+
+`200 OK`，响应体为空：
+
+```
+HTTP/1.1 200 OK
+cache-control: no-store
+content-length: 0
+date: Mon, 28 Sep 2026 16:44:12 GMT
+```
+
+### 字段说明
+
+没有响应体，也没有 `Content-Type` 头。只需判断状态码是否为 `200`。
+
+### 缓存行为
+
+响应头为 `Cache-Control: no-store`，任何缓存都不应保存它，每次探测都必须到达服务本身。
+
+### 请求日志
+
+健康检查不记入请求日志，响应也不带 `x-request-id`。探针通常每几秒请求一次，记下来会淹没真实请求的日志。
+
+### 错误
+
+无。服务不可用时连接会失败或超时，不会返回其他状态码。
+
+---
+
 ## 错误码
 
 | HTTP 状态 | `code` | 说明 |
@@ -663,6 +715,7 @@ curl http://127.0.0.1:3000/api/stations/ADM/next-trains
 
 | 日期 | 变更 |
 |---|---|
+| 2026-09-29 | 新增 `GET /api/health` 健康检查：返回 `200`、空响应体和 `Cache-Control: no-store`，不访问上游，不记入请求日志。 |
 | 2026-09-28 | `GET /api/lines/status` 改为读取后台每 30 秒一次的轮询结果。`max-age` 最多为 33，并随距下一次轮询的时间递减；上游正常时不再出现 `stale: true`。响应字段不变。 |
 | 2026-09-28 | 文档修正：错误码表移除 `500 internal_error`。服务从未返回过这个错误码，客户端行为不受影响。 |
 | 2026-09-28 | **不兼容变更。** 列车到站接口（`GET /api/lines/{line}/stations/{station}/next-trains`、`GET /api/stations/{station}/next-trains`）的 `up` / `down` 数组改为 `directions` 数组，每个方向带 `direction`、`towards`、`trains`；本站是某方向终点时不再返回该方向；列车移除 `sequence`，改以数组顺序表示先后。`GET /api/lines` 的 `destinations` 改为 `directions`，`towards` 只列月台指示牌上的主要终点。 |

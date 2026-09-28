@@ -27,6 +27,12 @@ pub(super) fn for_freshness(freshness: Freshness) -> HeaderValue {
     }
 }
 
+/// For answers that must come from the service itself every time, such as
+/// a health check, never from a cache in between.
+pub(super) fn no_store() -> HeaderValue {
+    HeaderValue::from_static("no-store")
+}
+
 /// A JSON response with the given `Cache-Control` header.
 pub(super) fn json(cache_control: HeaderValue, body: impl Serialize) -> Response {
     ([(CACHE_CONTROL, cache_control)], Json(body)).into_response()

@@ -2,8 +2,8 @@
 
 use axum::{
     Router,
-    body::{Body, to_bytes},
-    http::{HeaderMap, Request, StatusCode, header},
+    body::{Body, Bytes, to_bytes},
+    http::{HeaderMap, Method, Request, StatusCode, header},
 };
 use dut::{AppConfig, build_app};
 use jiff::{Timestamp, tz};
@@ -57,12 +57,31 @@ impl TestApp {
         Self { router, upstream }
     }
 
+    /// Sends a `GET` and decodes the JSON body.
     pub(crate) async fn get(&self, uri: &str) -> TestResponse {
+        let RawResponse {
+            status,
+            headers,
+            body,
+        } = self.send(Method::GET, uri).await;
+        let body = serde_json::from_slice(&body).expect("response should contain valid JSON");
+
+        TestResponse {
+            status,
+            headers,
+            body,
+        }
+    }
+
+    /// Sends a request without a body and keeps the response body as bytes,
+    /// for routes that do not answer with JSON.
+    pub(crate) async fn send(&self, method: Method, uri: &str) -> RawResponse {
         let response = self
             .router
             .clone()
             .oneshot(
                 Request::builder()
+                    .method(method)
                     .uri(uri)
                     .body(Body::empty())
                     .expect("request should be valid"),
@@ -75,14 +94,20 @@ impl TestApp {
         let body = to_bytes(response.into_body(), usize::MAX)
             .await
             .expect("response body should be readable");
-        let body = serde_json::from_slice(&body).expect("response should contain valid JSON");
 
-        TestResponse {
+        RawResponse {
             status,
             headers,
             body,
         }
     }
+}
+
+/// A response whose body is kept as received.
+pub(crate) struct RawResponse {
+    pub status: StatusCode,
+    pub headers: HeaderMap,
+    pub body: Bytes,
 }
 
 pub(crate) struct TestResponse {

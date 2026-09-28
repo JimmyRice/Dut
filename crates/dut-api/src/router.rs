@@ -7,6 +7,9 @@ use crate::{error::ApiError, middleware, routes, state::AppState};
 
 /// The whole HTTP surface: every route under `/api`, a JSON 404 for any
 /// other path, and request tracing around both.
+///
+/// The health check is added after tracing, so it is not traced: probes
+/// arrive every few seconds and would bury real requests in the log.
 pub fn router<N: NextTrainSource, L: LineStatusSource>(state: AppState<N, L>) -> Router {
     let api = Router::new()
         .merge(routes::lines::router())
@@ -16,7 +19,7 @@ pub fn router<N: NextTrainSource, L: LineStatusSource>(state: AppState<N, L>) ->
         .nest("/api", api)
         .fallback(not_found)
         .with_state(state);
-    middleware::with_request_tracing(router)
+    middleware::with_request_tracing(router).merge(routes::health::router())
 }
 
 async fn not_found(request: Request) -> ApiError {
