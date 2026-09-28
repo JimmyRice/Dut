@@ -22,6 +22,7 @@ use dut_telemetry::millis;
 
 use crate::{
     cache::{CachePolicy, Fetched, RefreshingCache},
+    connectivity::Probe,
     mtr::next_train::dto::{Schedule, ScheduleDataError, ScheduleResponse},
 };
 
@@ -64,8 +65,8 @@ impl MtrNextTrainSource {
 
     /// The request the startup connectivity check sends: one board in
     /// English, the same kind of request a rider's lookup makes.
-    pub fn probe(&self) -> UpstreamRequest {
-        self.client.request(PROBE_BOARD, Language::English)
+    pub fn probe(&self) -> Probe {
+        Probe::json(self.client.request(PROBE_BOARD, Language::English))
     }
 }
 

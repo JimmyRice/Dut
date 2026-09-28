@@ -103,28 +103,18 @@ impl<T> BySourceFile<T> {
         }
     }
 
-    pub fn map<U>(self, mut transform: impl FnMut(SourceFile, T) -> U) -> BySourceFile<U> {
-        BySourceFile {
-            lines_and_stations: transform(SourceFile::LinesAndStations, self.lines_and_stations),
-            lines_fares: transform(SourceFile::LinesFares, self.lines_fares),
-            airport_express_fares: transform(
-                SourceFile::AirportExpressFares,
-                self.airport_express_fares,
-            ),
-            light_rail_routes_and_stops: transform(
-                SourceFile::LightRailRoutesAndStops,
-                self.light_rail_routes_and_stops,
-            ),
-            light_rail_fares: transform(SourceFile::LightRailFares, self.light_rail_fares),
-            barrier_free_facility_categories: transform(
-                SourceFile::BarrierFreeFacilityCategories,
-                self.barrier_free_facility_categories,
-            ),
-            barrier_free_facilities: transform(
-                SourceFile::BarrierFreeFacilities,
-                self.barrier_free_facilities,
-            ),
-        }
+    /// Builds one value per file, in [`SourceFile::ALL`] order, stopping at
+    /// the first error.
+    pub fn try_from_fn<E>(mut value: impl FnMut(SourceFile) -> Result<T, E>) -> Result<Self, E> {
+        Ok(Self {
+            lines_and_stations: value(SourceFile::LinesAndStations)?,
+            lines_fares: value(SourceFile::LinesFares)?,
+            airport_express_fares: value(SourceFile::AirportExpressFares)?,
+            light_rail_routes_and_stops: value(SourceFile::LightRailRoutesAndStops)?,
+            light_rail_fares: value(SourceFile::LightRailFares)?,
+            barrier_free_facility_categories: value(SourceFile::BarrierFreeFacilityCategories)?,
+            barrier_free_facilities: value(SourceFile::BarrierFreeFacilities)?,
+        })
     }
 }
 
@@ -202,8 +192,11 @@ mod tests {
         for file in SourceFile::ALL {
             assert_eq!(*names.get(file), file.file_name());
         }
-        let lengths = names.map(|_, name| name.len());
-        assert_eq!(lengths.lines_fares, "mtr_lines_fares.csv".len());
+        let failed = BySourceFile::try_from_fn(|file| match file {
+            SourceFile::LightRailFares => Err(file),
+            _ => Ok(file.file_name()),
+        });
+        assert_eq!(failed, Err(SourceFile::LightRailFares));
     }
 
     #[test]

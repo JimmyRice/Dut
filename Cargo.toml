@@ -22,6 +22,7 @@ dut-upstream = { path = "crates/dut-upstream" }
 
 axum = "0.8.9"
 bytes = "1.12.1"
+csv = "1.4.0"
 futures = "0.3.34"
 jiff = "0.2.37"
 mimalloc = "0.1.52"

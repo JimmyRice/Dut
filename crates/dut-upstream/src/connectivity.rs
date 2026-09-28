@@ -2,6 +2,7 @@
 
 use std::error::Error;
 
+use csv::ReaderBuilder;
 use futures::future::join_all;
 use serde::de::IgnoredAny;
 use thiserror::Error;
@@ -21,7 +22,43 @@ use dut_telemetry::millis;
 #[derive(Clone, Debug)]
 pub struct ConnectivityCheck {
     http: OutboundHttpClient,
-    probes: Vec<UpstreamRequest>,
+    probes: Vec<Probe>,
+}
+
+/// A request the check sends, and the kind of document a real answer is.
+///
+/// Proxies and captive portals answer `200` with an HTML page, so a
+/// successful status alone does not show that upstream was reached; the
+/// body must also be the kind of document upstream serves.
+#[derive(Clone, Debug)]
+pub struct Probe {
+    request: UpstreamRequest,
+    format: Format,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Format {
+    Json,
+    Csv,
+}
+
+impl Probe {
+    /// Expects a well-formed JSON document.
+    pub const fn json(request: UpstreamRequest) -> Self {
+        Self {
+            request,
+            format: Format::Json,
+        }
+    }
+
+    /// Expects a CSV file: a header of two or more columns, and rows with
+    /// as many fields.
+    pub const fn csv(request: UpstreamRequest) -> Self {
+        Self {
+            request,
+            format: Format::Csv,
+        }
+    }
 }
 
 /// How one upstream answered its probe.
@@ -37,14 +74,15 @@ pub enum ProbeError {
     #[error(transparent)]
     Upstream(#[from] UpstreamError),
 
-    /// Proxies and captive portals answer `200` with an HTML page, so a
-    /// successful status alone does not show that upstream was reached.
     #[error("the response was not JSON")]
     NotJson(#[from] serde_json::Error),
+
+    #[error("the response was not CSV")]
+    NotCsv(#[source] Option<csv::Error>),
 }
 
 impl ConnectivityCheck {
-    pub const fn new(http: OutboundHttpClient, probes: Vec<UpstreamRequest>) -> Self {
+    pub const fn new(http: OutboundHttpClient, probes: Vec<Probe>) -> Self {
         Self { http, probes }
     }
 
@@ -75,11 +113,11 @@ impl ConnectivityCheck {
         outcomes
     }
 
-    async fn probe(&self, request: &UpstreamRequest) -> ProbeOutcome {
-        let upstream = request.upstream;
-        let host = request.url.host_str().unwrap_or_default();
+    async fn probe(&self, probe: &Probe) -> ProbeOutcome {
+        let upstream = probe.request.upstream;
+        let host = probe.request.url.host_str().unwrap_or_default();
         let started = Instant::now();
-        let result = self.fetch_json(request).await;
+        let result = self.fetch(probe).await;
         let elapsed_ms = millis(started.elapsed());
 
         match &result {
@@ -95,13 +133,34 @@ impl ConnectivityCheck {
         ProbeOutcome { upstream, result }
     }
 
-    /// Fetches the probe and checks that the body is well-formed JSON,
+    /// Fetches the probe and checks that the body is the document expected,
     /// without building a value from it.
-    async fn fetch_json(&self, request: &UpstreamRequest) -> Result<(), ProbeError> {
-        let response = self.http.fetch(request.clone()).await?;
-        response.json::<IgnoredAny>()?;
+    async fn fetch(&self, probe: &Probe) -> Result<(), ProbeError> {
+        let response = self.http.fetch(probe.request.clone()).await?;
+        match probe.format {
+            Format::Json => {
+                response.json::<IgnoredAny>()?;
+            }
+            Format::Csv => check_csv(response.body())?,
+        }
         Ok(())
     }
+}
+
+/// An HTML page read as CSV has one column, or rows of uneven length.
+fn check_csv(body: &[u8]) -> Result<(), ProbeError> {
+    let mut reader = ReaderBuilder::new().from_reader(body);
+    let columns = reader
+        .headers()
+        .map_err(|cause| ProbeError::NotCsv(Some(cause)))?
+        .len();
+    if columns < 2 {
+        return Err(ProbeError::NotCsv(None));
+    }
+    for record in reader.records() {
+        record.map_err(|cause| ProbeError::NotCsv(Some(cause)))?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -121,7 +180,7 @@ mod tests {
 
     const TIMEOUT: Duration = Duration::from_secs(5);
 
-    fn probe(upstream: &'static str, url: &str) -> UpstreamRequest {
+    fn request(upstream: &'static str, url: &str) -> UpstreamRequest {
         UpstreamRequest {
             upstream,
             url: Url::parse(url).expect("test URL should be valid"),
@@ -129,7 +188,11 @@ mod tests {
         }
     }
 
-    async fn run(probes: Vec<UpstreamRequest>) -> Vec<ProbeOutcome> {
+    fn probe(upstream: &'static str, url: &str) -> Probe {
+        Probe::json(request(upstream, url))
+    }
+
+    async fn run(probes: Vec<Probe>) -> Vec<ProbeOutcome> {
         let http =
             dut_http::build("dut-test", TIMEOUT, ProxyMode::Direct).expect("client should build");
         ConnectivityCheck::new(http, probes).run().await
@@ -189,6 +252,42 @@ mod tests {
         .await;
 
         assert!(matches!(outcomes[0].result, Err(ProbeError::NotJson(_))));
+    }
+
+    #[tokio::test]
+    async fn accepts_a_csv_file_where_csv_is_expected() {
+        let portal = serve(
+            "/data/airport_express_fares.csv",
+            ResponseTemplate::new(200)
+                .set_body_bytes(fixtures::read("mtr/open_data/airport_express_fares.csv")),
+        )
+        .await;
+
+        let outcomes = run(vec![Probe::csv(request(
+            "open_data",
+            &format!("{}/data/airport_express_fares.csv", portal.uri()),
+        ))])
+        .await;
+
+        assert!(outcomes[0].result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn treats_an_html_page_as_not_csv() {
+        let portal = serve(
+            "/data/airport_express_fares.csv",
+            ResponseTemplate::new(200)
+                .set_body_string("<!DOCTYPE html>\n<html>Sign in to continue</html>\n"),
+        )
+        .await;
+
+        let outcomes = run(vec![Probe::csv(request(
+            "open_data",
+            &format!("{}/data/airport_express_fares.csv", portal.uri()),
+        ))])
+        .await;
+
+        assert!(matches!(outcomes[0].result, Err(ProbeError::NotCsv(_))));
     }
 
     #[tokio::test]

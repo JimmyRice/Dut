@@ -10,6 +10,7 @@ use dut_core::{
 };
 use dut_http::{OutboundHttpClient, UpstreamError, UpstreamRequest};
 
+use crate::connectivity::Probe;
 use crate::hko::warnings::dto::WarningInfoResponse;
 
 const UPSTREAM: &str = "hko.warnings";
@@ -39,8 +40,8 @@ impl HkoWarningFeed {
 
     /// The request the startup connectivity check sends: the same request
     /// every poll makes.
-    pub fn probe(&self) -> UpstreamRequest {
-        self.request()
+    pub fn probe(&self) -> Probe {
+        Probe::json(self.request())
     }
 
     fn request(&self) -> UpstreamRequest {

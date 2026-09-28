@@ -12,6 +12,7 @@ workspace = true
 dut-telemetry.workspace = true
 
 bytes.workspace = true
+jiff.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
