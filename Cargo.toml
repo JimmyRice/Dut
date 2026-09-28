@@ -15,6 +15,8 @@ publish = false
 dut-api = { path = "crates/dut-api" }
 dut-core = { path = "crates/dut-core" }
 dut-http = { path = "crates/dut-http" }
+dut-monitor = { path = "crates/dut-monitor" }
+dut-poll = { path = "crates/dut-poll" }
 dut-telemetry = { path = "crates/dut-telemetry" }
 dut-upstream = { path = "crates/dut-upstream" }
 
@@ -67,6 +69,8 @@ workspace = true
 dut-api.workspace = true
 dut-core.workspace = true
 dut-http.workspace = true
+dut-monitor.workspace = true
+dut-poll.workspace = true
 dut-telemetry.workspace = true
 dut-upstream.workspace = true
 

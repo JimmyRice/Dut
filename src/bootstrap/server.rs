@@ -17,16 +17,21 @@ use super::{
 /// and the outcome is logged; requests are served meanwhile.
 pub async fn run(config: AppConfig) -> Result<(), StartupError> {
     let mtr = config.mtr();
+    let hko = config.hko();
+    let polling = config.polling();
     info!(
         bind_address = %config.bind_address(),
         outbound_http_timeout_ms = millis(config.outbound_http_timeout()),
         outbound_proxy = ?config.outbound_proxy(),
         next_train_endpoint = mtr.next_train_endpoint,
         line_status_endpoint = mtr.line_status_endpoint,
-        weather_endpoint = config.weather_endpoint(),
+        weather_warnings_endpoint = hko.warnings_endpoint,
         mtr_request_timeout_ms = millis(mtr.request_timeout),
+        hko_request_timeout_ms = millis(hko.request_timeout),
         next_train_cache = ?mtr.next_train_cache,
-        line_status_cache = ?mtr.line_status_cache,
+        line_status_poll = ?polling.line_status,
+        weather_warnings_poll = ?polling.weather_warnings,
+        next_train_signals_poll = ?polling.next_train_signals,
         "starting server"
     );
 

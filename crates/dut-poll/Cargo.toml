@@ -1,0 +1,21 @@
+[package]
+name = "dut-poll"
+description = "Background polling of whole-document feeds, with their latest value and source health."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+dut-core.workspace = true
+dut-telemetry.workspace = true
+
+jiff.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "test-util"] }

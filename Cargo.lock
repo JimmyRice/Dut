@@ -307,6 +307,8 @@ dependencies = [
  "dut-api",
  "dut-core",
  "dut-http",
+ "dut-monitor",
+ "dut-poll",
  "dut-telemetry",
  "dut-upstream",
  "jiff",
@@ -356,6 +358,30 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "dut-monitor"
+version = "0.1.0"
+dependencies = [
+ "dut-core",
+ "dut-poll",
+ "futures",
+ "jiff",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "dut-poll"
+version = "0.1.0"
+dependencies = [
+ "dut-core",
+ "dut-telemetry",
+ "jiff",
  "thiserror",
  "tokio",
  "tracing",

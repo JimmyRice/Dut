@@ -1,4 +1,8 @@
 //! Wire format of the MTR line status feed (`ryg_line_status.json`).
+//!
+//! The feed's `messages` field is undocumented during incidents, so a shape
+//! this service does not expect is logged verbatim: the first real incident
+//! is the only chance to learn it.
 
 use serde::Deserialize;
 use serde_json::Value;

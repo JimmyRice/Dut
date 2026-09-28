@@ -3,6 +3,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
 use dut_http::ProxyMode;
+use dut_poll::Schedule;
 use dut_upstream::CachePolicy;
 
 use super::StartupError;
@@ -17,14 +18,51 @@ const BIND_ADDRESS_VAR: &str = "DUT_BIND_ADDRESS";
 const NEXT_TRAIN_ENDPOINT: &str = "https://rt.data.gov.hk/v1/transport/mtr/getSchedule.php";
 const LINE_STATUS_ENDPOINT: &str = "https://tnews.mtr.com.hk/alert/ryg_line_status.json";
 
-/// The Hong Kong Observatory's current weather report. No endpoint serves
-/// weather yet; the startup connectivity check probes it alongside the MTR
-/// feeds, with the client-wide timeout.
-const WEATHER_ENDPOINT: &str =
-    "https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=rhrread&lang=en";
+/// The Hong Kong Observatory's weather warning information. Unlike the
+/// shorter warning summary, it lists the pre-No. 8 special announcement.
+const WEATHER_WARNINGS_ENDPOINT: &str =
+    "https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=warningInfo&lang=en";
 
 /// Short enough that a slow upstream falls back to stale data quickly.
 const MTR_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Warnings are read in the background, so nobody waits on this; it only
+/// bounds how long a hung request delays the next poll.
+const HKO_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// How long a polled value may stand in, marked stale, while polls fail.
+const POLL_STALE_IF_ERROR: Duration = Duration::from_secs(15 * 60);
+
+/// Line status changes rarely, and the MTR website itself refreshes it only
+/// every three minutes, so a poll every 30 seconds loses nothing. A value
+/// stays fresh until the next poll has had its timeout to finish.
+const LINE_STATUS_POLL: Schedule = Schedule {
+    interval: Duration::from_secs(30),
+    first_poll_after: Duration::ZERO,
+    fresh_for: Duration::from_secs(30).saturating_add(MTR_REQUEST_TIMEOUT),
+    stale_if_error: POLL_STALE_IF_ERROR,
+    blind_after: Duration::from_secs(2 * 60),
+};
+
+/// Warnings are issued minutes to hours ahead of their effect, so a poll
+/// every minute is plenty.
+const WEATHER_WARNINGS_POLL: Schedule = Schedule {
+    interval: Duration::from_secs(60),
+    first_poll_after: Duration::ZERO,
+    fresh_for: Duration::from_secs(60).saturating_add(HKO_REQUEST_TIMEOUT),
+    stale_if_error: POLL_STALE_IF_ERROR,
+    blind_after: Duration::from_secs(5 * 60),
+};
+
+/// Sampling only watches for changes, so it starts a minute after startup
+/// rather than competing with riders' first requests.
+const NEXT_TRAIN_SIGNALS_POLL: Schedule = Schedule {
+    interval: Duration::from_secs(60),
+    first_poll_after: Duration::from_secs(60),
+    fresh_for: Duration::from_secs(60).saturating_add(MTR_REQUEST_TIMEOUT),
+    stale_if_error: POLL_STALE_IF_ERROR,
+    blind_after: Duration::from_secs(5 * 60),
+};
 
 /// Next Train data is served fresh or not at all under normal conditions:
 /// expired boards are refreshed before answering (no stale-while-revalidate),
@@ -38,27 +76,16 @@ const NEXT_TRAIN_CACHE: CachePolicy = CachePolicy {
     failure_backoff: Duration::from_secs(5),
 };
 
-/// Line status changes rarely and the feed is one shared document, so it is
-/// refreshed in the background and may stand in for longer during outages.
-/// Upstream's `max-age=5` is ignored in favour of a fixed period.
-const LINE_STATUS_CACHE: CachePolicy = CachePolicy {
-    default_ttl: Duration::from_secs(30),
-    ttl_floor: Duration::from_secs(30),
-    ttl_ceiling: Duration::from_secs(30),
-    stale_while_revalidate: Duration::from_secs(60),
-    stale_if_error: Duration::from_secs(15 * 60),
-    failure_backoff: Duration::from_secs(10),
-};
-
 /// Settings for one server process. The default listens on localhost and
-/// reads the live MTR feeds; tests swap the endpoints for a fake upstream.
+/// reads the live upstreams; tests swap the endpoints for a fake upstream.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AppConfig {
     bind_address: SocketAddr,
     outbound_http_timeout: Duration,
     outbound_proxy: ProxyMode,
     mtr: MtrConfig,
-    weather_endpoint: String,
+    hko: HkoConfig,
+    polling: PollingConfig,
 }
 
 /// Where and how to read the MTR's real-time feeds.
@@ -68,7 +95,22 @@ pub(crate) struct MtrConfig {
     pub line_status_endpoint: String,
     pub request_timeout: Duration,
     pub next_train_cache: CachePolicy,
-    pub line_status_cache: CachePolicy,
+}
+
+/// Where and how to read the Hong Kong Observatory's weather warnings.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct HkoConfig {
+    pub warnings_endpoint: String,
+    pub request_timeout: Duration,
+}
+
+/// How often each feed is read in the background, and how long what was
+/// read stays usable.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct PollingConfig {
+    pub line_status: Schedule,
+    pub weather_warnings: Schedule,
+    pub next_train_signals: Schedule,
 }
 
 impl AppConfig {
@@ -84,22 +126,6 @@ impl AppConfig {
         }
     }
 
-    const fn new(
-        bind_address: SocketAddr,
-        outbound_http_timeout: Duration,
-        outbound_proxy: ProxyMode,
-        mtr: MtrConfig,
-        weather_endpoint: String,
-    ) -> Self {
-        Self {
-            bind_address,
-            outbound_http_timeout,
-            outbound_proxy,
-            mtr,
-            weather_endpoint,
-        }
-    }
-
     /// Points the MTR adapters at other endpoints, e.g. a test double.
     #[must_use]
     pub fn with_mtr_endpoints(
@@ -109,6 +135,14 @@ impl AppConfig {
     ) -> Self {
         self.mtr.next_train_endpoint = next_train.into();
         self.mtr.line_status_endpoint = line_status.into();
+        self
+    }
+
+    /// Points the weather warning adapter at another endpoint, e.g. a test
+    /// double. The endpoint is the full URL, query included.
+    #[must_use]
+    pub fn with_weather_warnings_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+        self.hko.warnings_endpoint = endpoint.into();
         self
     }
 
@@ -148,31 +182,36 @@ impl AppConfig {
         &self.mtr
     }
 
-    pub(crate) fn weather_endpoint(&self) -> &str {
-        &self.weather_endpoint
+    pub(crate) const fn hko(&self) -> &HkoConfig {
+        &self.hko
+    }
+
+    pub(crate) const fn polling(&self) -> PollingConfig {
+        self.polling
     }
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
-        Self::new(
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), DEFAULT_PORT),
-            DEFAULT_HTTP_TIMEOUT,
-            ProxyMode::System,
-            MtrConfig::default(),
-            WEATHER_ENDPOINT.to_owned(),
-        )
-    }
-}
-
-impl Default for MtrConfig {
-    fn default() -> Self {
         Self {
-            next_train_endpoint: NEXT_TRAIN_ENDPOINT.to_owned(),
-            line_status_endpoint: LINE_STATUS_ENDPOINT.to_owned(),
-            request_timeout: MTR_REQUEST_TIMEOUT,
-            next_train_cache: NEXT_TRAIN_CACHE,
-            line_status_cache: LINE_STATUS_CACHE,
+            bind_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), DEFAULT_PORT),
+            outbound_http_timeout: DEFAULT_HTTP_TIMEOUT,
+            outbound_proxy: ProxyMode::System,
+            mtr: MtrConfig {
+                next_train_endpoint: NEXT_TRAIN_ENDPOINT.to_owned(),
+                line_status_endpoint: LINE_STATUS_ENDPOINT.to_owned(),
+                request_timeout: MTR_REQUEST_TIMEOUT,
+                next_train_cache: NEXT_TRAIN_CACHE,
+            },
+            hko: HkoConfig {
+                warnings_endpoint: WEATHER_WARNINGS_ENDPOINT.to_owned(),
+                request_timeout: HKO_REQUEST_TIMEOUT,
+            },
+            polling: PollingConfig {
+                line_status: LINE_STATUS_POLL,
+                weather_warnings: WEATHER_WARNINGS_POLL,
+                next_train_signals: NEXT_TRAIN_SIGNALS_POLL,
+            },
         }
     }
 }

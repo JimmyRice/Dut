@@ -15,7 +15,7 @@ Dut 是一个用 Rust 编写的港铁（MTR）实时数据 API，也是 MTRGo Ap
 | `GET` | `/api/lines/{line}/stations/{station}/next-trains` | 某条线在某个车站的下几班列车 |
 | `GET` | `/api/stations/{station}/next-trains` | 途经某个车站的所有线路的下几班列车，适合换乘站 |
 
-参数、字段说明、缓存行为和错误码见 [api.md](api.md)。
+参数、字段说明、缓存行为和错误码见 [HTTP_API.md](HTTP_API.md)。
 
 ## 快速开始
 
@@ -75,7 +75,7 @@ curl http://127.0.0.1:3000/api/lines/TKL/stations/TKO/next-trains
 | 数据 | 新鲜期 | 上游出故障时 |
 |---|---|---|
 | 列车到站 | 跟随港铁 CDN 的 `max-age`，通常 10 秒 | 90 秒内的旧数据仍会返回，标记为 `stale` |
-| 线路状态 | 30 秒，过期后在后台刷新 | 15 分钟内的旧数据仍会返回，标记为 `stale` |
+| 线路状态 | 后台每 30 秒拉取一次，`max-age` 最多 33 秒 | 15 分钟内的旧数据仍会返回，标记为 `stale` |
 | 线路与车站资料 | 编译在服务里，随部署更新 | 不访问上游 |
 
 响应头 `Cache-Control: public, max-age=N` 表示数据还有多少秒算新鲜，App 可以直接用它作为下次轮询的间隔。
@@ -166,6 +166,7 @@ gh attestation verify dut-x86_64-unknown-linux-musl.tar.gz -R JimmyRice/Dut
 - **在终端里运行时**：同一个请求的所有日志合成一块，开头是一行摘要，并带颜色。设置 `NO_COLOR=1` 可以关闭颜色。
 - **输出到文件或管道时**：每条日志一行，不带颜色，方便 `grep` 和日志收集工具处理。
 - **启动时的连通性检查**：开始监听后，服务会在后台向每个上游各发一个请求，检查能否连上并拿到 JSON，每个上游输出一行 `upstream reachable` 或 `upstream unreachable`（带耗时和错误原因），最后输出一行汇总：`every upstream is reachable` 或 `some upstreams are unreachable`。检查不会阻塞请求，也不会因为上游不通而退出，上游恢复后缓存会自动重试。
+- **后台轮询与监控事件**：线路状态、天文台警告和各线抽查站的 Next Train 在后台定时拉取，日志带 `poll{source=...}`。数据源连续失败时会输出 `source is failing` 或 `source is blind`。每一次数据变化（包括每晚收车时 `normal` 变 `non_service_hours`）都会输出一行 `event: ...`，例如 `event: line status changed`。服务启动后的第一次拉取只作为基线，不输出事件。
 
 ## 开发
 
@@ -185,7 +186,7 @@ cargo test
 
 项目是一个 Cargo workspace，在根目录运行这三条命令会覆盖所有 crate；只想检查某一个 crate 时加上 `-p <crate>`，例如 `cargo test -p dut-core`。
 
-测试完全离线运行：路由测试在 `tests/api/`，用 `wiremock` 模拟港铁上游，上游样例数据在 `tests/fixtures/`，来自真实响应。
+测试完全离线运行：路由测试在 `tests/api/`，用 `wiremock` 模拟港铁和天文台上游，上游样例数据在 `tests/fixtures/`，来自真实响应。
 
 ```text
 src/                 dut 程序本身：配置、组装依赖、启动服务
@@ -193,18 +194,21 @@ crates/
   dut-core/          线路、车站、列车到站等业务类型和用例，不依赖任何框架
   dut-telemetry/     日志输出
   dut-http/          共用的出站 HTTP 客户端
-  dut-upstream/      港铁接口适配、缓存、启动时的连通性检查
+  dut-upstream/      港铁和天文台接口适配、缓存、启动时的连通性检查
+  dut-poll/          后台定时拉取，保存最新数据和数据源健康状态
+  dut-monitor/       对比每次拉取的结果，把每个变化作为事件发布
   dut-api/           Axum 路由、响应 DTO、错误映射、请求追踪
 tests/api/           路由级测试
 tests/fixtures/      上游样例数据
 ```
 
 - [ARCHITECTURE.md](ARCHITECTURE.md)：分层、依赖方向、缓存设计，以及新增功能的步骤
-- [AGENTS.md](AGENTS.md)：开发规范，人和编码助手都需要遵守，包括"改接口必须同步更新 api.md"
-- [api.md](api.md)：面向客户端的接口文档和变更记录
+- [AGENTS.md](AGENTS.md)：开发规范，人和编码助手都需要遵守，包括"改接口必须同步更新 HTTP_API.md"
+- [HTTP_API.md](HTTP_API.md)：面向客户端的接口文档和变更记录
+- [RUST_API.md](RUST_API.md)：写业务逻辑时用到的类型、服务和 trait，例如订阅监控事件的 `Subscriber`、接入新数据源的 `Feed`
 
 ## 数据来源
 
 - 列车到站：[港铁 Next Train API](https://rt.data.gov.hk/v1/transport/mtr/getSchedule.php)，由香港政府的资料一线通（DATA.GOV.HK）发布
 - 线路状态：[港铁线路状态 JSON](https://tnews.mtr.com.hk/alert/ryg_line_status.json)
-- 天气：[香港天文台本港地区天气报告](https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=rhrread&lang=en)，目前没有接口使用，只在启动时做连通性检查
+- 天气警告：[香港天文台天气警告资料](https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=warningInfo&lang=en)，后台每分钟拉取一次，目前只用于监控事件，没有接口直接返回

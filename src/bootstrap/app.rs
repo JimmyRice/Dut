@@ -6,10 +6,11 @@ use reqwest::Url;
 
 use dut_api::AppState;
 use dut_core::application::{line_status::LineStatusService, next_train::NextTrainService};
-use dut_http::UpstreamRequest;
+use dut_monitor::NextTrainSignalFeed;
 use dut_upstream::{
     connectivity::ConnectivityCheck,
-    mtr::{line_status::MtrLineStatusSource, next_train::MtrNextTrainSource},
+    hko::warnings::HkoWarningFeed,
+    mtr::{line_status::MtrLineStatusFeed, next_train::MtrNextTrainSource},
 };
 
 use super::{AppConfig, StartupError};
@@ -20,6 +21,10 @@ const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VE
 /// Builds the complete HTTP application, constructing every concrete
 /// dependency once. Tests call it directly to get a router without binding a
 /// socket.
+///
+/// It also starts polling the background feeds and the monitor that watches
+/// them, so it must be called within a Tokio runtime, and a fake upstream
+/// must be ready before it is called.
 pub fn build_app(config: &AppConfig) -> Result<Router, StartupError> {
     assemble(config).map(|app| app.router)
 }
@@ -39,33 +44,46 @@ pub(super) fn assemble(config: &AppConfig) -> Result<App, StartupError> {
     )
     .map_err(StartupError::HttpClient)?;
     let mtr = config.mtr();
+    let hko = config.hko();
+    let polling = config.polling();
 
-    let next_trains = MtrNextTrainSource::new(
+    let next_train_source = MtrNextTrainSource::new(
         outbound_http.clone(),
         parse_endpoint("next_train_endpoint", &mtr.next_train_endpoint)?,
         mtr.request_timeout,
         mtr.next_train_cache,
     );
-    let line_status = MtrLineStatusSource::new(
+    let line_status_feed = MtrLineStatusFeed::new(
         outbound_http.clone(),
         parse_endpoint("line_status_endpoint", &mtr.line_status_endpoint)?,
         mtr.request_timeout,
-        mtr.line_status_cache,
     );
-    let weather = UpstreamRequest {
-        upstream: "hko.weather",
-        url: parse_endpoint("weather_endpoint", config.weather_endpoint())?,
-        timeout: config.outbound_http_timeout(),
-    };
+    let weather_warnings_feed = HkoWarningFeed::new(
+        outbound_http.clone(),
+        parse_endpoint("weather_warnings_endpoint", &hko.warnings_endpoint)?,
+        hko.request_timeout,
+    );
     let connectivity = ConnectivityCheck::new(
         outbound_http,
-        vec![next_trains.probe(), line_status.probe(), weather],
+        vec![
+            next_train_source.probe(),
+            line_status_feed.probe(),
+            weather_warnings_feed.probe(),
+        ],
     );
 
-    let state = AppState::new(
-        NextTrainService::new(next_trains),
-        LineStatusService::new(line_status),
+    let next_trains = NextTrainService::new(next_train_source);
+    let line_status = dut_poll::spawn(line_status_feed, polling.line_status);
+    let weather_warnings = dut_poll::spawn(weather_warnings_feed, polling.weather_warnings);
+    let next_train_signals = dut_poll::spawn(
+        NextTrainSignalFeed::new(next_trains.clone()),
+        polling.next_train_signals,
     );
+    // The monitor attaches its own event log. Business logic that reacts to
+    // events is attached here too, with `monitor.attach(subscriber)`.
+    let _monitor = dut_monitor::spawn(&line_status, &weather_warnings, &next_train_signals);
+
+    let state = AppState::new(next_trains, LineStatusService::new(line_status));
 
     Ok(App {
         router: dut_api::router(state),

@@ -1,12 +1,14 @@
-use crate::support::TestApp;
+use crate::support::{NEXT_TRAIN_PATH, TestApp};
 use axum::http::{StatusCode, header};
 use serde_json::json;
-use wiremock::{Mock, ResponseTemplate, matchers::any};
+use wiremock::{Mock, ResponseTemplate, matchers::path};
 
 #[tokio::test]
 async fn lines_describe_the_static_network() {
     let app = TestApp::start().await;
-    Mock::given(any())
+    // Background polls read their own feeds; only a per-request call would
+    // reach the Next Train API.
+    Mock::given(path(NEXT_TRAIN_PATH))
         .respond_with(ResponseTemplate::new(500))
         .expect(0)
         .mount(&app.upstream)

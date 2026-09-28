@@ -25,11 +25,14 @@ These rules apply to contributors and coding agents working in this repository.
 
 - New endpoints must include route-level tests covering status, content type,
   and response body.
-- Every new or changed endpoint must update `api.md` in the same change. Cover
-  the URL, HTTP method, path and query parameters, a request example, response
-  examples, field descriptions, caching behaviour, and error responses, and add
-  an entry to its changelog. Take examples from real responses of the running
-  service and keep them valid JSON.
+- Every new or changed endpoint must update `HTTP_API.md` in the same change.
+  Cover the URL, HTTP method, path and query parameters, a request example,
+  response examples, field descriptions, caching behaviour, and error
+  responses, and add an entry to its changelog. Take examples from real
+  responses of the running service and keep them valid JSON.
+- Every new or changed trait, handle, event, or entry point that business
+  logic uses must update `RUST_API.md` in the same change, keeping its
+  signatures and examples accurate.
 - Non-trivial domain and application behavior must include unit tests.
 - Reuse the shared Reqwest client; never create a client per request.
 - Keep transport DTOs separate from domain models and implement explicit
