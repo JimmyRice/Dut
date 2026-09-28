@@ -3,7 +3,7 @@ use axum::http::{StatusCode, header};
 use serde_json::{Value, json};
 use wiremock::{
     Mock, ResponseTemplate,
-    matchers::{any, method, path, query_param},
+    matchers::{method, path, query_param},
 };
 
 fn upstream_ok(body: Value) -> ResponseTemplate {
@@ -197,7 +197,7 @@ async fn line_board_is_served_from_cache_on_repeat_requests() {
 #[tokio::test]
 async fn invalid_lines_and_stations_are_rejected_without_calling_upstream() {
     let app = TestApp::start().await;
-    Mock::given(any())
+    Mock::given(path(NEXT_TRAIN_PATH))
         .respond_with(ResponseTemplate::new(500))
         .expect(0)
         .mount(&app.upstream)

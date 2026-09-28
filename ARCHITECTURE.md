@@ -6,6 +6,10 @@ services depend on the application and domain layers, never the reverse.
 Layers live in separate crates, so each crate's `Cargo.toml` enforces the
 direction: a crate cannot import what it does not depend on.
 
+This document explains how the pieces fit. [RUST_API.md](RUST_API.md) is the
+reference for the types, services, and traits used to write business logic,
+and [HTTP_API.md](HTTP_API.md) documents the HTTP endpoints.
+
 ## Crates
 
 Crates are split where code is reused or deployed separately, not one per
@@ -13,12 +17,19 @@ layer.
 
 | Crate | Layer | Contents | Workspace dependencies |
 | --- | --- | --- | --- |
-| `dut-core` | domain, application | Domain types, use cases, their ports, `Snapshot` and `Freshness` | none |
+| `dut-core` | domain, application | Domain types and their diffs, monitor events, use cases, their ports (including `Feed` and `Subscriber`), `Snapshot` and `Freshness` | none |
 | `dut-telemetry` | telemetry | Log output and log-field conventions | none |
 | `dut-http` | infrastructure | `OutboundHttpClient` and upstream freshness parsing | telemetry |
-| `dut-upstream` | infrastructure | MTR adapters, `RefreshingCache`, the connectivity check | core, http, telemetry |
+| `dut-upstream` | infrastructure | MTR and Observatory adapters, `RefreshingCache`, the connectivity check | core, http, telemetry |
+| `dut-poll` | background | Polls `Feed`s on a schedule, keeps their latest value and source health | core, telemetry |
+| `dut-monitor` | background | Watches polled feeds and publishes each change as a `MonitorEvent` | core, poll |
 | `dut-api` | api | Axum routes, DTOs, middleware, `ApiError`, `AppState` | core, telemetry |
 | `dut` (root package) | bootstrap | Configuration, wiring, process lifecycle | all |
+
+`dut-poll` and `dut-monitor` are split at a deployment boundary. Every API
+instance polls, because the line status endpoint serves the polled value;
+only one instance should run the monitor, since each would publish the same
+events.
 
 - `domain`: Pure business types and rules. `dut-core` has no Axum, Reqwest,
   Serde, or Tokio dependency, so this is a compile error rather than a
@@ -38,6 +49,9 @@ layer.
   package's `src/`. It holds the configuration and startup errors, creates
   infrastructure and services, assembles `AppState`, builds the application,
   and serves it.
+- `background`: Work that runs without a request. `dut-poll` knows nothing
+  of what a feed contains; `dut-monitor` interprets changes through the diffs
+  that `dut-core` defines on its domain types.
 - `telemetry`: Log output and log-field conventions shared by every crate.
 
 ## Request flow
@@ -47,9 +61,22 @@ HTTP request
   -> dut-api route
   -> dut-core application service
   -> dut-core domain model/rules
-  -> dut-upstream adapter when external data is required
+  -> dut-upstream adapter when external data is required,
+     or the latest polled value from dut-poll
   -> dut-api DTO
   -> HTTP response
+```
+
+## Background flow
+
+```text
+dut-poll poller, one task per feed, on its own schedule
+  -> dut-upstream feed adapter (Feed port)
+  -> latest value and source health, in a watch channel
+       -> dut-api line status route, through the LineStatusSource port
+       -> dut-monitor watcher
+            -> dut-core diff of the previous and current value
+            -> MonitorEvent, logged and broadcast to subscribers
 ```
 
 ## Workspace map
@@ -58,12 +85,17 @@ HTTP request
 Cargo.toml        workspace manifest, and the dut binary package
 src/              bootstrap/{app (wiring), config, error (StartupError), server}, lib.rs, main.rs
 crates/
-  dut-core/       domain/{network, next_train, line_status, localized, time},
-                  application/{source, next_train, line_status}
+  dut-core/       domain/{network, next_train, line_status, weather, source_health,
+                         event, localized, time},
+                  application/{source, feed, subscriber, next_train, line_status}
   dut-telemetry/  console, fields (log-field conventions),
                   request_blocks (terminal view, one block per request)
   dut-http/       client (OutboundHttpClient), freshness
-  dut-upstream/   cache, connectivity, mtr/{next_train, line_status}
+  dut-upstream/   cache, connectivity, mtr/{next_train, line_status}, hko/warnings
+  dut-poll/       poller (spawn), schedule, health, state, handle (FeedHandle),
+                  line_status (LineStatusSource for the polled feed)
+  dut-monitor/    monitor (spawn, MonitorHandle), watcher, delivery (runs a Subscriber),
+                  signals, event_log
   dut-api/        router, routes, dto, error, http_cache, middleware, state
 tests/api/        route-level tests of the whole application
 tests/fixtures/   captured upstream responses, also read by dut-upstream's unit tests
@@ -95,9 +127,12 @@ The `dut` library exports only what `main` and the route tests use:
 
 ## Caching and freshness
 
-Upstream feeds are read through `RefreshingCache` in `dut-upstream`, a
-generic in-memory cache with one entry per key. The principle is to **cache
-absolute facts and derive relative values at the edge**:
+Upstream data reaches the API in one of two ways. Next Train boards are read
+per request through `RefreshingCache` in `dut-upstream`, a generic in-memory
+cache with one entry per key. Whole-document feeds, such as line status and
+weather warnings, are polled on a schedule by `dut-poll` (see "Polled
+feeds"). The principle for both is to **cache absolute facts and derive
+relative values at the edge**:
 
 - Next Train arrivals are stored and returned as absolute times
   (`arrival_at`, RFC 3339 with `+08:00`). Upstream's `ttnt` countdown is
@@ -115,9 +150,8 @@ Each cache applies a `CachePolicy`:
 - **Single-flight.** Concurrent readers of an expired key wait for one
   refresh instead of each calling upstream.
 - **Stale-while-revalidate.** Within this window, an expired value is served
-  immediately while it refreshes in the background. It is enabled for line
-  status and disabled for Next Train, where freshness matters more than the
-  roughly 200 ms refresh.
+  immediately while it refreshes in the background. Next Train disables it,
+  since freshness matters more there than the roughly 200 ms refresh.
 - **Stale-if-error.** When a refresh fails, a value that expired within this
   window is served with `"stale": true` instead of an error.
 - **Failure backoff.** After a failed refresh, upstream is left alone for a
@@ -138,11 +172,40 @@ At startup, `dut_upstream::connectivity::ConnectivityCheck` requests one
 document from every upstream in the background and logs whether each could be
 reached. Each adapter supplies its own probe request, so the check uses the
 same URLs and timeouts as real traffic. It only reports: a failed probe does
-not stop the server, since the caches already retry and serve stale data.
+not stop the server, since the caches and pollers already retry and serve
+stale data.
 
-The cache is in-process and assumes a single instance. Running several
-instances multiplies upstream load by the instance count; at that point,
-move the cache behind a shared store.
+The cache and the pollers are in-process and assume a single instance.
+Running several instances multiplies upstream load by the instance count; at
+that point, move the cache behind a shared store.
+
+### Polled feeds
+
+`dut_poll::spawn` reads a `Feed` in its own Tokio task on a `Schedule`, so a
+slow upstream never delays another. The feed adapter holds no cache; the
+poller keeps the last successful value, and a `FeedHandle` reads it.
+
+- **Interval.** Line status is polled every 30 seconds, weather warnings and
+  the sampled Next Train boards every 60. The interval uses
+  `MissedTickBehavior::Delay`, so a poll that overruns delays the next one
+  rather than being followed by a burst of catch-up requests to a struggling
+  upstream.
+- **Freshness.** A value is fresh for the interval plus the request timeout,
+  so it does not turn stale while the next poll is in flight. The line status
+  endpoint's `max-age` is therefore at most 33 seconds, and `"stale": true`
+  only appears when polls fail.
+- **Stale-if-error.** A failed poll keeps the last value. It is served,
+  marked stale, for 15 minutes past its freshness, then the endpoint returns
+  `502`.
+- **First poll.** A request that arrives before the first poll finishes waits
+  for it, so requests made just after startup do not fail.
+- **Source health.** Each poller tracks `starting`, `healthy`, `failing`, and
+  `blind` (no success for 2 minutes for line status, 5 minutes for the
+  others), and logs each transition.
+
+Upstream's `max-age=5` on the line status feed is ignored. The feed is only
+rebuilt when a line's status changes, so its `lastBuildDate` is not a
+heartbeat.
 
 ## Adding a feature
 
@@ -151,8 +214,10 @@ move the cache behind a shared store.
 2. Add the use case under `application` in `dut-core`; define a port there
    when the use case requires external data.
 3. Implement that port in `dut-upstream`, calling upstream through
-   `OutboundHttpClient::fetch` and caching through `RefreshingCache` when the
-   data is shared across requests.
+   `OutboundHttpClient::fetch`. Cache through `RefreshingCache` when the data
+   is shared across requests and keyed by the request, or implement `Feed`
+   and poll it with `dut-poll` when it is one document read in the
+   background.
 4. Register the concrete implementation in `bootstrap` and expose it through
    `AppState`, adding a type parameter for the new source.
 5. Add DTOs and handlers in `dut-api`, keeping handlers limited to extraction,
@@ -160,61 +225,65 @@ move the cache behind a shared store.
 6. Add route-level integration tests as a module of `tests/api`, which builds
    a single test binary, and unit tests beside non-trivial domain or
    application logic.
-7. Document the endpoint in `api.md`, and record the change in its changelog.
+7. Document the endpoint in `HTTP_API.md`, and record the change in its changelog.
 
 Do not introduce repository or service abstractions without a real consumer.
 The layer and dependency direction are fixed, while individual abstractions
 should be added when their contracts are known.
 
-## Planned crates
+## Monitor
 
-The workspace will gain two crates once a background monitor and push
-notifications for the MTRGo app are built. This section records the agreed
-direction; neither crate exists yet.
+`dut-monitor` watches the polled feeds and publishes each change as a
+`MonitorEvent` from `dut-core`.
+
+- **Facts, not judgements.** Every change is published, including routine
+  ones such as a line going from `normal` to `non_service_hours` when service
+  ends for the night. Events carry no severity, pass no threshold, and are
+  not fused across sources: what matters depends on the audience, so each
+  subscriber decides.
+- **Events.** Line status (condition or message), weather warnings (issued,
+  changed, or cancelled, for every warning the Observatory documents),
+  Next Train signals (a delay flag or special arrangement notice at a sampled
+  station), and source health.
+- **Diffs.** Each domain type defines `changes_since` in `dut-core`, so the
+  comparison is unit-tested without tasks or channels. One watcher task per
+  feed compares the previous and current successful values after each poll.
+- **Baseline.** A feed's first successful poll publishes nothing, so a restart
+  never replays the current state as news.
+- **Outages.** A failed poll changes no data, so an outage appears only as a
+  source health event, never as service resuming or a warning cancelled.
+- **Delivery.** Business logic implements the `Subscriber` trait from
+  `dut-core` and is attached in bootstrap with `MonitorHandle::attach`. Each
+  subscriber runs in its own task and receives events one at a time, in
+  order, over a `broadcast` channel, so a slow subscriber delays only itself
+  and keeps its state in `&mut self` without locks. Events are not replayed:
+  a subscriber that falls more than 256 events behind is told how many it
+  missed through `on_lagged` and should resynchronise from the feeds' latest
+  values. The event log is a subscriber too, attached by `dut_monitor::spawn`.
+  See [RUST_API.md](RUST_API.md) for how to write one.
+- **Sampled boards.** One mid-line station per line is read every minute
+  through the same cached `NextTrainService` that serves riders, so it adds
+  at most ten upstream requests a minute. Whether a board's delay flag leads
+  the line status feed is not known yet; these events exist to find out.
+- **Transport Department** special traffic news is deferred. It is free text,
+  and it needs classifying, possibly by a small language model, before it can
+  be published as events.
+
+## Planned: push notifications
+
+`dut-push` will turn monitor events into push notifications for the MTRGo
+app. This section records the agreed direction; the crate does not exist yet.
 
 | Crate | Contents | Workspace dependencies |
 | --- | --- | --- |
-| `dut-monitor` | Polling loops, fusion of sources, publishing service alerts | core, telemetry |
 | `dut-push` | Push notification policy and the OneSignal client | core, http, telemetry |
 
-- `dut-upstream` gains Hong Kong Observatory and Transport Department
-  adapters, and `dut-core` gains the service alert events the monitor
-  publishes.
-- Event types live in `dut-core`, so `dut-push` does not depend on
-  `dut-monitor`. The binary connects the two with a channel.
-- `dut-monitor` reads its sources through ports in `dut-core`. The binary
-  injects the adapters from `dut-upstream`, and tests inject fakes.
+- Event types and the `Subscriber` trait live in `dut-core`, so `dut-push`
+  does not depend on `dut-monitor`. The binary attaches it with
+  `MonitorHandle::attach`.
 - `dut-push` shares the `OutboundHttpClient` in `dut-http` with the adapters.
-
-Order:
-
-1. Add `dut-monitor`, and let the line status endpoint read the monitor's
-   current state.
-2. Add `dut-push` when the OneSignal integration starts.
-
-### Monitor
-
-- Each source is polled on its own schedule in its own Tokio task and reports
-  to a single fusion task, so a slow source never delays another. Intervals
-  use `MissedTickBehavior::Delay`, so a request that timed out is not followed
-  by a burst of catch-up requests to a failing upstream.
-- It publishes deduplicated state transitions with a severity, such as an
-  alert starting, escalating, or ending. It does not publish every poll, and
-  it does not filter by notification threshold: thresholds depend on the
-  audience and belong to consumers.
-- The current state is exposed through a `watch` channel and transitions
-  through a `broadcast` channel. A consumer that starts late or lags behind
-  resynchronises from the current state.
-- The event vocabulary is modelled on GTFS-realtime alerts: cause, effect,
-  affected lines and stations, active period, and severity.
-- MTR line status and Observatory warnings are structured and may trigger
-  alerts. Transport Department special traffic news is free text and is only
-  attached as context.
-- A failed poll is logged and the loop continues. The time of the last
-  successful poll is kept for health reporting.
-- The line status endpoint reads the monitor's current state instead of its
-  own `RefreshingCache`, so line status is fetched from upstream once rather
-  than twice. Next Train keeps request-driven caching.
+- Severity, thresholds, and correlating sources (such as a No. 8 signal and
+  the MTR's typhoon status) belong to its policy, not to the monitor.
 
 ### Push notifications
 
@@ -263,6 +332,7 @@ environment.
 
 The service starts as one binary and one process, with components connected
 by in-process channels. Split into several processes only when the API scales
-out. Move the event channel to a shared broker such as Redis or NATS only when
-a consumer runs in another process, and add serialisable DTOs for events then,
-outside `dut-core`.
+out: every instance then polls, while the monitor and push run in exactly
+one. Move the event channel to a shared broker such as Redis or NATS only
+when a consumer runs in another process, and add serialisable DTOs for events
+then, outside `dut-core`.

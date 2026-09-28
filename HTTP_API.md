@@ -1,4 +1,4 @@
-# Dut API 文档
+# Dut HTTP API 文档
 
 Dut 是 MTRGo App 的数据整合后端。本文档记录全部对外 HTTP 接口。
 
@@ -220,14 +220,14 @@ curl http://127.0.0.1:3000/api/lines/status
 
 ### 响应示例
 
-`200 OK`，响应头包含 `Cache-Control: public, max-age=30`。
+`200 OK`，响应头包含 `Cache-Control: public, max-age=16`（距下一次轮询的剩余秒数，见下方"缓存行为"）。
 
 以下为节选：实际返回 11 条线路，这里只展示 3 条。
 
 ```json
 {
-  "updated_at": "2026-09-27T06:15:00+08:00",
-  "fetched_at": "2026-09-28T00:18:39+08:00",
+  "updated_at": "2026-09-28T06:15:01+08:00",
+  "fetched_at": "2026-09-28T23:30:07+08:00",
   "stale": false,
   "lines": [
     {
@@ -271,9 +271,9 @@ curl http://127.0.0.1:3000/api/lines/status
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `updated_at` | string（时间） | 港铁最后一次发布这份状态的时间 |
-| `fetched_at` | string（时间） | 本服务取回数据的时间 |
-| `stale` | boolean | 数据是否已超过新鲜期，见下方"缓存行为" |
+| `updated_at` | string（时间） | 港铁最后一次发布这份状态的时间。港铁只在有线路状态变化时才重新发布，所以它可能是几小时前的，不代表数据过时 |
+| `fetched_at` | string（时间） | 本服务最近一次成功取回数据的时间 |
+| `stale` | boolean | 最近几次拉取是否失败、正在用旧数据顶替，见下方"缓存行为" |
 | `lines` | array | 各线路状态，顺序与港铁数据源一致 |
 | `lines[].line` | object | 线路 `{ code, name }` |
 | `lines[].color` | string | 线路品牌色，格式为 `#RRGGBB` |
@@ -295,15 +295,16 @@ curl http://127.0.0.1:3000/api/lines/status
 
 ### 缓存行为
 
-- 数据缓存 30 秒。
-- 过期后 60 秒内的请求会**立即返回旧数据**，同时在后台刷新。这时响应的 `stale` 为 `true`，`Cache-Control` 为 `no-cache`，下一次请求就会拿到新数据。所以即使上游一切正常，偶尔也会看到 `stale: true`。
-- 上游故障时，15 分钟内的旧数据仍会返回（同样标记 `stale: true`）。
+- 服务在后台每 30 秒拉取一次港铁状态源，请求本身不会触发上游调用，直接返回最近一次拉取的结果。
+- `Cache-Control` 的 `max-age` 是这份数据还能保持新鲜的秒数：从拉取时起算 33 秒（30 秒间隔加 3 秒请求超时），所以最多为 33，并随时间递减。
+- 上游正常时 `stale` 始终为 `false`。只有拉取失败时，旧数据才会以 `stale: true`、`Cache-Control: no-cache` 返回，最长顶替 15 分钟。
+- 服务刚启动、第一次拉取还没完成时，请求会等它完成再返回。
 
 ### 错误
 
 | HTTP 状态 | `code` | 触发条件 |
 |---|---|---|
-| `502` | `upstream_unavailable` | 港铁状态源不可用，且没有 15 分钟内的旧数据可以返回 |
+| `502` | `upstream_unavailable` | 从未成功拉取到港铁状态源，或最近一次成功拉取已超过新鲜期加 15 分钟 |
 
 ---
 
@@ -662,6 +663,7 @@ curl http://127.0.0.1:3000/api/stations/ADM/next-trains
 
 | 日期 | 变更 |
 |---|---|
+| 2026-09-28 | `GET /api/lines/status` 改为读取后台每 30 秒一次的轮询结果。`max-age` 最多为 33，并随距下一次轮询的时间递减；上游正常时不再出现 `stale: true`。响应字段不变。 |
 | 2026-09-28 | 文档修正：错误码表移除 `500 internal_error`。服务从未返回过这个错误码，客户端行为不受影响。 |
 | 2026-09-28 | **不兼容变更。** 列车到站接口（`GET /api/lines/{line}/stations/{station}/next-trains`、`GET /api/stations/{station}/next-trains`）的 `up` / `down` 数组改为 `directions` 数组，每个方向带 `direction`、`towards`、`trains`；本站是某方向终点时不再返回该方向；列车移除 `sequence`，改以数组顺序表示先后。`GET /api/lines` 的 `destinations` 改为 `directions`，`towards` 只列月台指示牌上的主要终点。 |
 | 2026-09-28 | 首版。新增 `GET /api/lines`、`GET /api/lines/status`、`GET /api/lines/{line}/stations/{station}/next-trains`、`GET /api/stations/{station}/next-trains`。移除 Hello 示例接口 `GET /api/hello`、`GET /api/hello.json`。 |

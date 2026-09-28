@@ -2,32 +2,31 @@ use crate::support::{LINE_STATUS_PATH, TestApp, line_status_fixture};
 use axum::http::StatusCode;
 use serde_json::{Value, json};
 use wiremock::{
-    Mock, ResponseTemplate,
+    Mock, MockServer, ResponseTemplate,
     matchers::{method, path},
 };
 
-async fn mount_feed(app: &TestApp, response: ResponseTemplate) {
+/// The application with the line status feed answering `response`. The feed
+/// is polled once when the application starts, and not again within a test.
+async fn app_with_feed(response: ResponseTemplate) -> TestApp {
+    let upstream = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path(LINE_STATUS_PATH))
         .respond_with(response)
         .expect(1)
-        .mount(&app.upstream)
+        .mount(&upstream)
         .await;
+    TestApp::serving(upstream).await
 }
 
 #[tokio::test]
 async fn line_status_returns_every_line() {
-    let app = TestApp::start().await;
-    mount_feed(
-        &app,
-        ResponseTemplate::new(200).set_body_json(line_status_fixture()),
-    )
-    .await;
+    let app = app_with_feed(ResponseTemplate::new(200).set_body_json(line_status_fixture())).await;
 
     let response = app.get("/api/lines/status").await;
 
     response.assert_json(StatusCode::OK);
-    assert!((29..=30).contains(&response.max_age()));
+    assert!((30..=33).contains(&response.max_age()));
     assert_eq!(response.body["updated_at"], "2026-09-27T06:15:00+08:00");
     assert_eq!(response.body["stale"], false);
     assert!(response.body["fetched_at"].is_string());
@@ -50,13 +49,8 @@ async fn line_status_returns_every_line() {
 }
 
 #[tokio::test]
-async fn line_status_is_served_from_cache_on_repeat_requests() {
-    let app = TestApp::start().await;
-    mount_feed(
-        &app,
-        ResponseTemplate::new(200).set_body_json(line_status_fixture()),
-    )
-    .await;
+async fn line_status_is_served_from_the_last_poll_on_repeat_requests() {
+    let app = app_with_feed(ResponseTemplate::new(200).set_body_json(line_status_fixture())).await;
 
     let first = app.get("/api/lines/status").await;
     let second = app.get("/api/lines/status").await;
@@ -68,7 +62,6 @@ async fn line_status_is_served_from_cache_on_repeat_requests() {
 
 #[tokio::test]
 async fn line_status_reports_meaning_and_website_colour() {
-    let app = TestApp::start().await;
     let feed = json!({
         "ryg_status": {
             "lastBuildDate": "2026-09-27 08:00:00",
@@ -80,7 +73,7 @@ async fn line_status_reports_meaning_and_website_colour() {
             ],
         }
     });
-    mount_feed(&app, ResponseTemplate::new(200).set_body_json(feed)).await;
+    let app = app_with_feed(ResponseTemplate::new(200).set_body_json(feed)).await;
 
     let response = app.get("/api/lines/status").await;
 
@@ -116,8 +109,7 @@ async fn line_status_reports_meaning_and_website_colour() {
 
 #[tokio::test]
 async fn line_status_upstream_failure_returns_bad_gateway() {
-    let app = TestApp::start().await;
-    mount_feed(&app, ResponseTemplate::new(500)).await;
+    let app = app_with_feed(ResponseTemplate::new(500)).await;
 
     let response = app.get("/api/lines/status").await;
 

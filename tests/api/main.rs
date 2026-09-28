@@ -1,5 +1,5 @@
-//! Route-level tests: the application wired to a fake MTR upstream, one
-//! module per endpoint group. They share one test binary, so adding an
+//! Route-level tests: the application wired to fake MTR and Observatory
+//! upstreams, one module per endpoint group. They share one test binary, so adding an
 //! endpoint does not add another crate to compile and link.
 
 mod line_status;

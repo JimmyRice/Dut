@@ -93,6 +93,70 @@ impl NextTrainBoard {
                 || self.upcoming(direction, as_of).next().is_some()
         })
     }
+
+    /// What this board says about service beyond its train times.
+    pub fn signal(&self) -> NextTrainSignal {
+        NextTrainSignal {
+            delayed: self.delayed,
+            notice: self.alert.clone(),
+        }
+    }
+}
+
+/// What a Next Train board says about service beyond its train times.
+///
+/// The Next Train API flags delays and publishes special arrangement notices
+/// per station, independently of the line status feed, so a sampled board
+/// may show trouble before or after the line status does.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct NextTrainSignal {
+    pub delayed: bool,
+    pub notice: Option<Localized<AlertNotice>>,
+}
+
+/// The signal of one sampled board.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BoardSignal {
+    pub line: Line,
+    pub station: StationCode,
+    pub signal: NextTrainSignal,
+}
+
+/// The signals of the boards sampled in one round.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct NextTrainSignals {
+    pub boards: Vec<BoardSignal>,
+}
+
+/// A sampled board whose signal differs between two rounds.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SignalChange {
+    pub line: Line,
+    pub station: StationCode,
+    pub previous: NextTrainSignal,
+    pub current: NextTrainSignal,
+}
+
+impl NextTrainSignals {
+    /// The boards whose signal changed since `previous`. A board missing from
+    /// either round, such as one that failed to load, is left out.
+    pub fn changes_since(&self, previous: &Self) -> Vec<SignalChange> {
+        self.boards
+            .iter()
+            .filter_map(|current| {
+                let before = previous
+                    .boards
+                    .iter()
+                    .find(|board| board.line == current.line && board.station == current.station)?;
+                (before.signal != current.signal).then(|| SignalChange {
+                    line: current.line,
+                    station: current.station,
+                    previous: before.signal.clone(),
+                    current: current.signal.clone(),
+                })
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -182,5 +246,83 @@ mod tests {
 
         assert_eq!(before, [Direction::Up, Direction::Down]);
         assert_eq!(after, [Direction::Down]);
+    }
+
+    fn notice(message: &str) -> Localized<AlertNotice> {
+        let notice = AlertNotice {
+            message: message.to_owned(),
+            url: None,
+        };
+        Localized::new(notice.clone(), notice)
+    }
+
+    #[test]
+    fn a_board_signals_its_delay_flag_and_notice() {
+        let board = NextTrainBoard {
+            delayed: true,
+            alert: Some(notice("Special train service arrangement")),
+            ..board("TKO", ByDirection::default())
+        };
+
+        assert_eq!(
+            board.signal(),
+            NextTrainSignal {
+                delayed: true,
+                notice: Some(notice("Special train service arrangement")),
+            }
+        );
+    }
+
+    fn sampled(station: &str, signal: NextTrainSignal) -> BoardSignal {
+        BoardSignal {
+            line: Line::TseungKwanO,
+            station: station.parse().expect("test station code should be valid"),
+            signal,
+        }
+    }
+
+    fn delayed() -> NextTrainSignal {
+        NextTrainSignal {
+            delayed: true,
+            notice: None,
+        }
+    }
+
+    #[test]
+    fn signal_changes_cover_only_boards_whose_signal_changed() {
+        let before = NextTrainSignals {
+            boards: vec![
+                sampled("TKO", NextTrainSignal::default()),
+                sampled("POA", NextTrainSignal::default()),
+            ],
+        };
+        let after = NextTrainSignals {
+            boards: vec![
+                sampled("TKO", delayed()),
+                sampled("POA", NextTrainSignal::default()),
+            ],
+        };
+
+        let changes = after.changes_since(&before);
+
+        assert_eq!(
+            changes,
+            [SignalChange {
+                line: Line::TseungKwanO,
+                station: "TKO".parse().expect("test station code should be valid"),
+                previous: NextTrainSignal::default(),
+                current: delayed(),
+            }]
+        );
+    }
+
+    #[test]
+    fn a_board_that_failed_to_load_is_not_a_signal_change() {
+        let before = NextTrainSignals {
+            boards: vec![sampled("TKO", delayed())],
+        };
+        let after = NextTrainSignals::default();
+
+        assert!(after.changes_since(&before).is_empty());
     }
 }

@@ -9,10 +9,14 @@ use dut::{AppConfig, build_app};
 use jiff::{Timestamp, tz};
 use serde_json::{Map, Value, json};
 use tower::ServiceExt;
-use wiremock::MockServer;
+use wiremock::{
+    Mock, MockServer, ResponseTemplate,
+    matchers::{method, path},
+};
 
 pub(crate) const NEXT_TRAIN_PATH: &str = "/v1/transport/mtr/getSchedule.php";
 pub(crate) const LINE_STATUS_PATH: &str = "/alert/ryg_line_status.json";
+const WEATHER_WARNINGS_PATH: &str = "/weatherAPI/opendata/weather.php";
 
 /// The application wired to a fake upstream.
 pub(crate) struct TestApp {
@@ -21,13 +25,32 @@ pub(crate) struct TestApp {
 }
 
 impl TestApp {
+    /// The application wired to a fake upstream that has nothing mounted
+    /// yet, so the line status feed is unavailable until a test mounts it.
     pub(crate) async fn start() -> Self {
-        let upstream = MockServer::start().await;
+        Self::serving(MockServer::start().await).await
+    }
+
+    /// The application wired to `upstream`.
+    ///
+    /// Background polls read line status and weather warnings as soon as the
+    /// application is built, so mount what they should find first. Weather
+    /// warnings default to none in force.
+    pub(crate) async fn serving(upstream: MockServer) -> Self {
+        Mock::given(method("GET"))
+            .and(path(WEATHER_WARNINGS_PATH))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+            .mount(&upstream)
+            .await;
         let config = AppConfig::default()
             .with_mtr_endpoints(
                 format!("{}{NEXT_TRAIN_PATH}", upstream.uri()),
                 format!("{}{LINE_STATUS_PATH}", upstream.uri()),
             )
+            .with_weather_warnings_endpoint(format!(
+                "{}{WEATHER_WARNINGS_PATH}?dataType=warningInfo&lang=en",
+                upstream.uri()
+            ))
             .without_proxy();
         let router = build_app(&config).expect("test application should build");
 
