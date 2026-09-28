@@ -120,7 +120,7 @@ docker run --rm -p 3000:3000 ghcr.io/jimmyrice/dut:latest
 
 ## 发布
 
-先把 `Cargo.toml` 里的 `version` 改成新版本并提交，再推送同名 tag：
+先把根目录 `Cargo.toml` 里 `[workspace.package]` 的 `version` 改成新版本并提交（所有 crate 共用这个版本号），再推送同名 tag：
 
 ```bash
 git tag v0.2.0
@@ -158,7 +158,7 @@ gh attestation verify dut-x86_64-unknown-linux-musl.tar.gz -R JimmyRice/Dut
 
 ## 日志
 
-- **日志级别**：用 `RUST_LOG` 设置，默认值是 `info,dut=debug,tower_http=debug`，会输出缓存命中等调试信息。想安静一些可以用 `RUST_LOG=info cargo run`。
+- **日志级别**：用 `RUST_LOG` 设置，默认值是 `info,dut=debug,tower_http=debug`，会输出缓存命中等调试信息。target 按前缀匹配，所以 `dut` 同时覆盖 `dut_upstream`、`dut_api` 等所有 crate。想安静一些可以用 `RUST_LOG=info cargo run`。
 - **在终端里运行时**：同一个请求的所有日志合成一块，开头是一行摘要，并带颜色。设置 `NO_COLOR=1` 可以关闭颜色。
 - **输出到文件或管道时**：每条日志一行，不带颜色，方便 `grep` 和日志收集工具处理。
 - **启动时的连通性检查**：开始监听后，服务会在后台向每个上游各发一个请求，检查能否连上并拿到 JSON，每个上游输出一行 `upstream reachable` 或 `upstream unreachable`（带耗时和错误原因），最后输出一行汇总：`every upstream is reachable` 或 `some upstreams are unreachable`。检查不会阻塞请求，也不会因为上游不通而退出，上游恢复后缓存会自动重试。
@@ -179,17 +179,20 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ```
 
+项目是一个 Cargo workspace，在根目录运行这三条命令会覆盖所有 crate；只想检查某一个 crate 时加上 `-p <crate>`，例如 `cargo test -p dut-core`。
+
 测试完全离线运行：路由测试在 `tests/api/`，用 `wiremock` 模拟港铁上游，上游样例数据在 `tests/fixtures/`，来自真实响应。
 
 ```text
-src/
-  domain/          线路、车站、列车到站等业务类型，不依赖任何框架
-  application/     用例：组合数据源、隐藏已开出的列车
-  infrastructure/  出站 HTTP 客户端、缓存、港铁接口适配
-  api/             Axum 路由、响应 DTO、错误映射、请求追踪
-  bootstrap/       配置、组装依赖、启动服务
-  telemetry/       日志输出
-tests/api/         路由级测试
+src/                 dut 程序本身：配置、组装依赖、启动服务
+crates/
+  dut-core/          线路、车站、列车到站等业务类型和用例，不依赖任何框架
+  dut-telemetry/     日志输出
+  dut-http/          共用的出站 HTTP 客户端
+  dut-upstream/      港铁接口适配、缓存、启动时的连通性检查
+  dut-api/           Axum 路由、响应 DTO、错误映射、请求追踪
+tests/api/           路由级测试
+tests/fixtures/      上游样例数据
 ```
 
 - [ARCHITECTURE.md](ARCHITECTURE.md)：分层、依赖方向、缓存设计，以及新增功能的步骤

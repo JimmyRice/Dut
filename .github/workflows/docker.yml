@@ -16,6 +16,8 @@ on:
       - Cargo.toml
       - Cargo.lock
       - src/**
+      - crates/*/Cargo.toml
+      - crates/*/src/**
       - Dockerfile
       - .dockerignore
       - .github/workflows/docker.yml

@@ -28,10 +28,12 @@ ENV CARGO_PROFILE_RELEASE_LTO=true \
 WORKDIR /src
 # The sources are bind-mounted rather than copied, and the registry and
 # target directory live in cache mounts, so a code change recompiles only
-# this crate and no layer ever holds the sources or build artefacts.
+# the workspace crates it touches and no layer ever holds the sources or
+# build artefacts.
 RUN --mount=type=bind,source=Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=Cargo.lock,target=Cargo.lock \
     --mount=type=bind,source=src,target=src \
+    --mount=type=bind,source=crates,target=crates \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target,id=dut-target-${TARGETPLATFORM} \
     xx-cargo build --release --locked --bin dut \

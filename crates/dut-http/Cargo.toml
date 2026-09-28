@@ -1,0 +1,20 @@
+[package]
+name = "dut-http"
+description = "The shared outbound HTTP client that logs every upstream request."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+dut-telemetry.workspace = true
+
+bytes.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["time"] }
+tracing.workspace = true
