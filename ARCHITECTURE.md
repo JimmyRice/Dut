@@ -10,6 +10,36 @@ This document explains how the pieces fit. [RUST_API.md](RUST_API.md) is the
 reference for the types, services, and traits used to write business logic,
 and [HTTP_API.md](HTTP_API.md) documents the HTTP endpoints.
 
+## Stateless first
+
+Dut runs as a stateless service. This takes precedence over any convenience
+that local state would buy; a design that needs state must say so here and
+justify it.
+
+- **Memory only.** Caches, polled values, open data, and the monitor's
+  baselines live in the process. A new process rebuilds them from upstreams
+  at startup. Nothing is written to local disk and no volume is mounted.
+- **Disposable instances.** Any instance can be stopped, replaced, or
+  duplicated without a migration or a handover. The cost is accepted: a
+  process that starts while an upstream is down serves `502` for that
+  upstream's data until it recovers, rather than data a previous process
+  saved.
+- **State that must outlive a process goes outside it**, and only when a
+  feature cannot work without it. Prefer, in order: a design that needs no
+  memory across restarts; a mechanism the external service already offers,
+  such as an idempotency key; a shared store such as Redis. Never local
+  disk.
+
+### Open conflicts
+
+Plans written before this principle that contradict it. Each is resolved in
+favour of statelessness when its feature is built.
+
+| Plan | Conflict | Direction |
+| --- | --- | --- |
+| `dut-push` persists what it already sent, so a restart does not repeat a notification ("Planned: push notifications") | It would be the first local state | Not adopted. A restart already replays nothing, since the monitor's first poll is only a baseline; a restart only loses cooldowns and deduplication windows held in memory. Accept that loss, or send event-derived idempotency keys so the provider drops repeats, before considering a shared store |
+| Exactly one instance runs the monitor and push ("Deployment") | Replacing that instance can briefly run two, or none, and two would send every notification twice | Choose the instance by configuration, not by coordination state, and rely on the same event-derived idempotency keys to drop duplicates during the overlap |
+
 ## Crates
 
 Crates are split where code is reused or deployed separately, not one per
@@ -192,6 +222,11 @@ keeps a local copy. The design follows from that:
   `ETag` (datasets also include the service version, since a release may
   change the JSON), answer `If-None-Match` with `304`, and list it in the
   `/api/data` index so the app checks everything in one request.
+- **Memory only.** The files and datasets are held by the poller and read
+  again from the portal whenever a process starts, per "Stateless first".
+  A process that starts during a portal outage answers `502` until the
+  portal returns; the 30-day stale window covers only outages that begin
+  while a process is running.
 - **The compiled network stays authoritative for Next Train.** The station
   list is served as published, and each poll logs where it disagrees with
   the compiled network; `scripts/sync-network.py` turns the published list
@@ -206,7 +241,8 @@ stale data.
 
 The cache and the pollers are in-process and assume a single instance.
 Running several instances multiplies upstream load by the instance count; at
-that point, move the cache behind a shared store.
+that point, move the cache behind a shared store, never onto local disk (see
+"Stateless first").
 
 ### Polled feeds
 
@@ -336,10 +372,17 @@ app. This section records the agreed direction; the crate does not exist yet.
   this API's line codes, so the service stores no user data. Tag names ship in
   installed apps and are hard to change, so agree them with the app before
   release.
-- What was already sent is persisted, so a restart does not repeat a
-  notification. This is the first persistent state in the service.
+- The record of what was already sent lives in memory, per "Stateless
+  first". An earlier plan persisted it so a restart would not repeat a
+  notification; that is not adopted (see "Open conflicts"). The monitor's
+  baseline already keeps a restart from replaying current state, so a
+  restart only forgets cooldowns and deduplication windows. Every
+  `Notification` carries an idempotency key derived from its event, to let
+  the provider drop repeats; confirm OneSignal's semantics and retention for
+  it before relying on it.
 - Only one instance may run push. When the API scales out, the other
-  instances run without it.
+  instances run without it. A replacement can briefly overlap with the
+  instance it replaces; the idempotency keys cover that too.
 
 ### Push configuration
 
@@ -366,6 +409,7 @@ environment.
 The service starts as one binary and one process, with components connected
 by in-process channels. Split into several processes only when the API scales
 out: every instance then polls, while the monitor and push run in exactly
-one. Move the event channel to a shared broker such as Redis or NATS only
+one, chosen by configuration rather than by leader election, which would
+need shared state. Move the event channel to a shared broker such as Redis or NATS only
 when a consumer runs in another process, and add serialisable DTOs for events
 then, outside `dut-core`.
