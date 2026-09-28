@@ -211,7 +211,18 @@ crates/
   dut-api/           Axum 路由、响应 DTO、错误映射、请求追踪
 tests/api/           路由级测试
 tests/fixtures/      上游样例数据
+scripts/             开发用脚本，例如同步车站资料的 sync-network.py
 ```
+
+### 同步编译进服务的车站资料
+
+列车到站依赖编译进服务的线路和车站资料（`crates/dut-core/src/domain/network/`）。港铁开放数据的车站列表与它不一致时（例如新车站开通或改名），服务每天拉取后会输出 warn 日志。这时先 `cargo run` 启动服务，再运行：
+
+```bash
+python3 scripts/sync-network.py
+```
+
+脚本读取运行中服务的 `/api/data/stations`（清洗后的开放数据）和 `/api/lines`（编译进服务的资料），列出新增、改名、缺失的车站，以及车站有变化的线路和它们在开放数据里的行车路线。加上 `--write` 会重新生成 `station.rs` 里的 `STATIONS` 表，开放数据里没有的车站（例如马场）原样保留。线路的车站顺序、支线和终点需要人工判断，脚本只打印 `codes![...]` 供参考，不会修改 `line.rs`。改完后运行 `cargo fmt && cargo test` 并检查 diff。脚本只用 Python 3 标准库；没有差异时退出码为 0，有差异时为 1。
 
 - [ARCHITECTURE.md](ARCHITECTURE.md)：分层、依赖方向、缓存设计，以及新增功能的步骤
 - [AGENTS.md](AGENTS.md)：开发规范，人和编码助手都需要遵守，包括"改接口必须同步更新 HTTP_API.md"
