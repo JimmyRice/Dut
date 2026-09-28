@@ -13,6 +13,9 @@ pub enum SourceId {
     MtrNextTrain,
     /// The Hong Kong Observatory's weather warnings.
     HkoWarnings,
+    /// The files on the MTR's open data portal: stations, fares, Light Rail,
+    /// and barrier-free facilities.
+    MtrOpenData,
 }
 
 impl SourceId {
@@ -22,6 +25,7 @@ impl SourceId {
             Self::MtrLineStatus => "mtr.line_status",
             Self::MtrNextTrain => "mtr.next_train",
             Self::HkoWarnings => "hko.warnings",
+            Self::MtrOpenData => "mtr.open_data",
         }
     }
 }

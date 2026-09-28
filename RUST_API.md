@@ -19,6 +19,7 @@ this file in the same change.
 | React to a change (a line disrupted, a warning issued, service ending) | Implement [`Subscriber`](#subscriber), attach with `MonitorHandle::attach` | `dut-core`, `dut-monitor` |
 | Read the current line status, weather warnings, or another polled feed | [`FeedHandle::snapshot`](#feedhandle) | `dut-poll` |
 | Look up Next Train boards | [`NextTrainService`](#nexttrainservice) | `dut-core` |
+| Read MTR open data: stations, fares, Light Rail, barrier-free facilities | [`ReferenceDataService`](#referencedataservice) | `dut-core` |
 | Read a new upstream document in the background | Implement [`Feed`](#feed), start it with `dut_poll::spawn` | `dut-core`, `dut-upstream`, `dut-poll` |
 | Call an upstream over HTTP | [`OutboundHttpClient::fetch`](#outbound-http) | `dut-http` |
 | Work with lines, stations, directions, bilingual names | [Domain vocabulary](#domain-vocabulary) | `dut-core` |
@@ -34,6 +35,7 @@ Business logic receives what it needs from there.
 | [`Feed`](#feed) | Read a whole upstream document on a schedule | `MtrLineStatusFeed`, `HkoWarningFeed`, `NextTrainSignalFeed` | `dut_poll::spawn(..)` in bootstrap |
 | `NextTrainSource` | Supply Next Train boards to `NextTrainService` | `MtrNextTrainSource` | `NextTrainService::new(..)` |
 | `LineStatusSource` | Supply line status to `LineStatusService` | `FeedHandle<NetworkStatus>` | `LineStatusService::new(..)` |
+| `ReferenceDataSource` | Supply MTR open data to `ReferenceDataService` | `FeedHandle<ReferenceData>` | `ReferenceDataService::new(..)` |
 
 Async trait methods are declared as
 `fn name(..) -> impl Future<Output = ..> + Send`, so callers can rely on
@@ -219,12 +221,28 @@ Borrow a `watch` value only briefly: a poll cannot publish while a borrow is
 held.
 
 `FeedHandle<NetworkStatus>` implements `LineStatusSource`, which is how the
-line status endpoint serves the polled value.
+line status endpoint serves the polled value. `FeedHandle<ReferenceData>`
+implements `ReferenceDataSource` the same way for the open data endpoints.
 
 `dut_poll::Schedule` sets `interval`, `first_poll_after`, `retry_after`,
 `fresh_for`, `stale_if_error`, and `blind_after`; see "Polled feeds" in
 ARCHITECTURE.md. A `retry_after` shorter than `interval` polls again that soon
 after a failure; set it equal to `interval` to keep the regular schedule.
+
+### ReferenceDataService
+
+`dut_core::application::reference_data::ReferenceDataService<S>`, cheap to
+clone.
+
+```rust
+let snapshot = service.reference_data().await?; // Snapshot<ReferenceData>
+let data = snapshot.value();
+let fare = data.fares.value().get(from, to);     // Option<&RailFares>
+let csv = data.files.get(SourceFile::LinesFares); // &PublishedFile
+```
+
+Every dataset and file in one `ReferenceData` comes from the same poll, so
+they agree with each other. See [reference](#reference) for the types.
 
 ### NextTrainService
 
@@ -294,11 +312,33 @@ these types around.
 | --- | --- |
 | `Line` | `AirportExpress`, `TungChung`, … `LightRail`. `"tkl".parse::<Line>()` is case-insensitive; `code()`, `name()`, `color()`, `stations()`, `termini()`, `towards(station, direction)`, `serves(station)`, `Line::serving(station)`, `Line::with_next_train()`, `Line::ALL` |
 | `StationCode` | Three uppercase letters, `Copy`. `"tko".parse::<StationCode>()` at runtime; `StationCode::from_static("TKO")` only in `const` items, where a bad literal fails the build |
-| `Station` | `Station::find(code)` returns the known station with its bilingual `name` |
+| `Station` | `Station::find(code)` returns the known station with its bilingual `name`; `Station::all()` lists them by code |
 | `Direction`, `ByDirection<T>` | `Up`/`Down` as the Next Train API defines them per line; `ByDirection::get(direction)` |
 
 A valid `StationCode` is not necessarily a known station: check with
 `Station::find` or `Line::serves`.
+
+### reference
+
+`dut_core::domain::reference`: MTR open data, read by `MtrOpenDataFeed`.
+
+| Item | Notes |
+| --- | --- |
+| `ReferenceData` | One poll's worth: `files: BySourceFile<PublishedFile>` and one `Dataset` per cleaned dataset (`stations`, `fares`, `airport_express_fares`, `light_rail`, `light_rail_fares`, `accessibility`) |
+| `Dataset<T>` | `value()`, `revision()`, `updated_at()` (upstream `Last-Modified`). `Dataset::new(value, updated_at)` derives the revision from the value's `Hash` |
+| `Revision` | Deterministic FNV-1a hash; `Revision::of(&value)`, `Revision::of_bytes(bytes)`; `Display` is 16 hex digits |
+| `SourceFile`, `BySourceFile<T>` | The seven portal files; `file_name()`, `FromStr` from the file name, `SourceFile::ALL`. `BySourceFile::get(file)`, `from_fn`, `map` |
+| `PublishedFile` | A file byte for byte: `body() -> &Arc<[u8]>`, `updated_at()`, `revision()` |
+| `Fare` | Whole Hong Kong cents; `"4.90".parse::<Fare>()` gives 490, `cents()` |
+| `FareTable<K, F>`, `Trip<K, F>` | Fares keyed by origin and destination, `StationCode` or `StopId`; `get(from, to)`, `trips()`. Drops same-stop trips |
+| `RailFares` | `octopus: OctopusFares` and `single_journey: SingleJourneyFares`, shared by MTR and Light Rail |
+| `AirportExpressFares` | `octopus` and `single_journey`, each `AdultAndChildFares` |
+| `PublishedNetwork` | Stations and `Route`s (`line`, `direction`, `stations`) as open data lists them; `drift()` compares them with the compiled network, returning `NetworkDrift`s |
+| `LightRailNetwork` | `stops: Vec<Stop>` (`StopId`, `StopCode`, name) and `routes: Vec<LightRailRoute>` (`RouteNumber`, stops per direction); `stop(id)`, `routes_serving(id)` |
+| `Accessibility` | `categories: Vec<FacilityGroup>` (`FacilityCategory`, name, `Facility`s) and `stations: Vec<StationAccessibility>` (provided `StationFacility`s with an optional `location`) |
+
+`StopCode` and `StationCode` are separate types on purpose: Light Rail stop
+codes are assigned independently of station codes.
 
 ### Everything else
 
@@ -309,7 +349,7 @@ A valid `StationCode` is not necessarily a known station: check with
 | `line_status` | `LineCondition` (`Normal`, `Delayed`, `Disrupted`, `DelayedOrDisrupted`, `NonServiceHours`, `TyphoonSignal`, `Unknown(String)`) with `display_color()`; `LineStatus`; `NetworkStatus::changes_since` |
 | `next_train` | `NextTrainBoard` with `signal()`; `TrainArrival` (absolute `arrival_at`, never a countdown); `AlertNotice`; `NextTrainSignal`; `NextTrainSignals::changes_since` |
 | `weather` | `WeatherWarning` (every Observatory warning, including `TropicalCyclone(CycloneSignal)`, `PreNo8Announcement`, `Rainstorm(RainstormLevel)`, and `Unrecognised(String)`); `ActiveWarning`; `WeatherWarnings::changes_since` |
-| `source_health` | `SourceId` (`MtrLineStatus`, `MtrNextTrain`, `HkoWarnings`), `HealthState`, `HealthChange` |
+| `source_health` | `SourceId` (`MtrLineStatus`, `MtrNextTrain`, `HkoWarnings`, `MtrOpenData`), `HealthState`, `HealthChange` |
 
 An unrecognised upstream value is kept verbatim (`Unknown`, `Unrecognised`)
 and logged, rather than failing the whole document.

@@ -86,14 +86,15 @@ Cargo.toml        workspace manifest, and the dut binary package
 src/              bootstrap/{app (wiring), config, error (StartupError), server}, lib.rs, main.rs
 crates/
   dut-core/       domain/{network, next_train, line_status, weather, source_health,
-                         event, localized, time},
-                  application/{source, feed, subscriber, next_train, line_status}
+                         event, localized, time, reference},
+                  application/{source, feed, subscriber, next_train, line_status,
+                               reference_data}
   dut-telemetry/  console, fields (log-field conventions),
                   request_blocks (terminal view, one block per request)
   dut-http/       client (OutboundHttpClient), freshness
   dut-upstream/   cache, connectivity, mtr/{next_train, line_status}, hko/warnings
   dut-poll/       poller (spawn), schedule, health, state, handle (FeedHandle),
-                  line_status (LineStatusSource for the polled feed)
+                  line_status, reference_data (the ports, served from polled feeds)
   dut-monitor/    monitor (spawn, MonitorHandle), watcher, delivery (runs a Subscriber),
                   signals, event_log
   dut-api/        router, routes, dto, error, http_cache, middleware, state
