@@ -2,6 +2,7 @@ use std::env;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
+use dut_http::ProxyMode;
 use dut_upstream::CachePolicy;
 
 use super::StartupError;
@@ -55,6 +56,7 @@ const LINE_STATUS_CACHE: CachePolicy = CachePolicy {
 pub struct AppConfig {
     bind_address: SocketAddr,
     outbound_http_timeout: Duration,
+    outbound_proxy: ProxyMode,
     mtr: MtrConfig,
     weather_endpoint: String,
 }
@@ -85,12 +87,14 @@ impl AppConfig {
     const fn new(
         bind_address: SocketAddr,
         outbound_http_timeout: Duration,
+        outbound_proxy: ProxyMode,
         mtr: MtrConfig,
         weather_endpoint: String,
     ) -> Self {
         Self {
             bind_address,
             outbound_http_timeout,
+            outbound_proxy,
             mtr,
             weather_endpoint,
         }
@@ -105,6 +109,15 @@ impl AppConfig {
     ) -> Self {
         self.mtr.next_train_endpoint = next_train.into();
         self.mtr.line_status_endpoint = line_status.into();
+        self
+    }
+
+    /// Connects to upstreams directly, ignoring any proxy the environment or
+    /// the operating system configures. Tests use it to reach a fake upstream
+    /// on this machine.
+    #[must_use]
+    pub const fn without_proxy(mut self) -> Self {
+        self.outbound_proxy = ProxyMode::Direct;
         self
     }
 
@@ -127,6 +140,10 @@ impl AppConfig {
         self.outbound_http_timeout
     }
 
+    pub(crate) const fn outbound_proxy(&self) -> ProxyMode {
+        self.outbound_proxy
+    }
+
     pub(crate) const fn mtr(&self) -> &MtrConfig {
         &self.mtr
     }
@@ -141,6 +158,7 @@ impl Default for AppConfig {
         Self::new(
             SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), DEFAULT_PORT),
             DEFAULT_HTTP_TIMEOUT,
+            ProxyMode::System,
             MtrConfig::default(),
             WEATHER_ENDPOINT.to_owned(),
         )
@@ -172,6 +190,15 @@ mod tests {
         assert_eq!(
             config.bind_address(),
             SocketAddr::from((Ipv4Addr::LOCALHOST, DEFAULT_PORT))
+        );
+    }
+
+    #[test]
+    fn uses_the_system_proxy_unless_told_otherwise() {
+        assert_eq!(AppConfig::default().outbound_proxy(), ProxyMode::System);
+        assert_eq!(
+            AppConfig::default().without_proxy().outbound_proxy(),
+            ProxyMode::Direct
         );
     }
 

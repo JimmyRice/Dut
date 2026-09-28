@@ -172,16 +172,37 @@ impl UpstreamResponse {
     }
 }
 
+/// Whether outbound requests may go through a proxy.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ProxyMode {
+    /// Through the proxy that `HTTPS_PROXY`, `HTTP_PROXY`, or the operating
+    /// system configures, if any. On macOS the system settings' bypass list is
+    /// not honoured; only `NO_PROXY` exempts a host.
+    #[default]
+    System,
+    /// Straight to every upstream. Tests use it so that a fake upstream on
+    /// this machine is reached directly, whatever proxy the machine runs: a
+    /// proxy answers an unreachable address with its own error response.
+    Direct,
+}
+
 /// Builds the client the whole process shares.
 ///
 /// The caller names the `User-Agent`, so upstreams see the application
 /// rather than this crate.
-pub fn build(user_agent: &str, timeout: Duration) -> Result<OutboundHttpClient, reqwest::Error> {
-    reqwest::Client::builder()
+pub fn build(
+    user_agent: &str,
+    timeout: Duration,
+    proxy: ProxyMode,
+) -> Result<OutboundHttpClient, reqwest::Error> {
+    let builder = reqwest::Client::builder()
         .timeout(timeout)
-        .user_agent(user_agent)
-        .build()
-        .map(OutboundHttpClient::new)
+        .user_agent(user_agent);
+    let builder = match proxy {
+        ProxyMode::System => builder,
+        ProxyMode::Direct => builder.no_proxy(),
+    };
+    builder.build().map(OutboundHttpClient::new)
 }
 
 fn failure_kind(error: &reqwest::Error) -> &'static str {

@@ -108,6 +108,7 @@ impl ConnectivityCheck {
 mod tests {
     use std::time::Duration;
 
+    use dut_http::ProxyMode;
     use reqwest::{StatusCode, Url};
     use tokio::net::TcpListener;
     use wiremock::{
@@ -129,7 +130,8 @@ mod tests {
     }
 
     async fn run(probes: Vec<UpstreamRequest>) -> Vec<ProbeOutcome> {
-        let http = dut_http::build("dut-test", TIMEOUT).expect("client should build");
+        let http =
+            dut_http::build("dut-test", TIMEOUT, ProxyMode::Direct).expect("client should build");
         ConnectivityCheck::new(http, probes).run().await
     }
 
@@ -199,9 +201,13 @@ mod tests {
 
         let outcomes = run(vec![probe("closed", &format!("http://{address}/"))]).await;
 
-        assert!(matches!(
-            outcomes[0].result,
-            Err(ProbeError::Upstream(UpstreamError::Transport { .. }))
-        ));
+        assert!(
+            matches!(
+                outcomes[0].result,
+                Err(ProbeError::Upstream(UpstreamError::Transport { .. }))
+            ),
+            "{:?}",
+            outcomes[0].result
+        );
     }
 }
