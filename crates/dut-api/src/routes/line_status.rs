@@ -3,7 +3,7 @@ use dut_core::application::{line_status::LineStatusSource, next_train::NextTrain
 
 use crate::{dto::LineStatusResponse, error::ApiError, http_cache, state::AppState};
 
-pub(super) fn router<N: NextTrainSource, L: LineStatusSource>() -> Router<AppState<N, L>> {
+pub(crate) fn router<N: NextTrainSource, L: LineStatusSource>() -> Router<AppState<N, L>> {
     Router::new().route("/lines/status", get(line_status::<N, L>))
 }
 

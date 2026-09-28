@@ -56,17 +56,22 @@ HTTP request
 
 ```text
 Cargo.toml        workspace manifest, and the dut binary package
-src/              bootstrap/{config, error (StartupError), server}, lib.rs, main.rs
+src/              bootstrap/{app (wiring), config, error (StartupError), server}, lib.rs, main.rs
 crates/
   dut-core/       domain/{network, next_train, line_status, localized, time},
                   application/{source, next_train, line_status}
-  dut-telemetry/  console logging, request_blocks (terminal view, one block per request)
-  dut-http/       OutboundHttpClient, freshness
+  dut-telemetry/  console, fields (log-field conventions),
+                  request_blocks (terminal view, one block per request)
+  dut-http/       client (OutboundHttpClient), freshness
   dut-upstream/   cache, connectivity, mtr/{next_train, line_status}
-  dut-api/        routes, dto, error, http_cache, middleware, state
+  dut-api/        router, routes, dto, error, http_cache, middleware, state
 tests/api/        route-level tests of the whole application
 tests/fixtures/   captured upstream responses, also read by dut-upstream's unit tests
 ```
+
+Every `lib.rs` and `mod.rs` is an index: module documentation, `mod`
+declarations, and `pub use` re-exports. Code lives in files named for what
+they do, so a file's name says where to look.
 
 `default-members` lists every crate, so `cargo build`, `cargo clippy`, and
 `cargo test` at the root cover the whole workspace; add `-p <crate>` for one.

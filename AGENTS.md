@@ -46,6 +46,9 @@ performance. Hold every change to the highest standard on all four.
 
 - Name things for what they mean in the MTR domain, not for how they are
   implemented. Prefer small modules with one clear purpose.
+- Keep `lib.rs` and `mod.rs` as indexes: module documentation, `mod`
+  declarations, and `pub use` re-exports only. Put code in a file named for
+  what it does, such as `client.rs` or `router.rs`.
 - Document every public item with `///`, explaining why it exists or behaves as
   it does, not restating the signature.
 - Model domain concepts with enums and newtypes (`Line`, `StationCode`)

@@ -14,7 +14,7 @@ use crate::{
     state::AppState,
 };
 
-pub(super) fn router<N: NextTrainSource, L: LineStatusSource>() -> Router<AppState<N, L>> {
+pub(crate) fn router<N: NextTrainSource, L: LineStatusSource>() -> Router<AppState<N, L>> {
     Router::new()
         .route(
             "/lines/{line}/stations/{station}/next-trains",

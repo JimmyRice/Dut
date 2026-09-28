@@ -5,7 +5,10 @@ use tracing::{info, warn};
 
 use dut_telemetry::millis;
 
-use super::{App, AppConfig, StartupError, assemble};
+use super::{
+    AppConfig, StartupError,
+    app::{App, assemble},
+};
 
 /// Serves the application on the configured address until the process is
 /// asked to stop, then lets in-flight requests finish before returning.

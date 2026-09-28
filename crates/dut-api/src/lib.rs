@@ -9,26 +9,9 @@ mod dto;
 mod error;
 mod http_cache;
 mod middleware;
+mod router;
 mod routes;
 mod state;
 
-use axum::{Router, extract::Request};
-use dut_core::application::{line_status::LineStatusSource, next_train::NextTrainSource};
-
-use crate::error::ApiError;
-
+pub use router::router;
 pub use state::AppState;
-
-/// The whole HTTP surface: every route under `/api`, a JSON 404 for any
-/// other path, and request tracing around both.
-pub fn router<N: NextTrainSource, L: LineStatusSource>(state: AppState<N, L>) -> Router {
-    let router = Router::new()
-        .nest("/api", routes::router())
-        .fallback(not_found)
-        .with_state(state);
-    middleware::with_request_tracing(router)
-}
-
-async fn not_found(request: Request) -> ApiError {
-    ApiError::not_found(request.uri().path())
-}
