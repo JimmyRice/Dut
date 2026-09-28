@@ -4,7 +4,9 @@ use axum::{
     response::Response,
     routing::get,
 };
-use dut_core::application::{line_status::LineStatusSource, next_train::NextTrainSource};
+use dut_core::application::{
+    line_status::LineStatusSource, next_train::NextTrainSource, reference_data::ReferenceDataSource,
+};
 
 use crate::{
     dto::{NextTrainResponse, StationBoardsResponse},
@@ -14,20 +16,21 @@ use crate::{
     state::AppState,
 };
 
-pub(crate) fn router<N: NextTrainSource, L: LineStatusSource>() -> Router<AppState<N, L>> {
+pub(crate) fn router<N: NextTrainSource, L: LineStatusSource, R: ReferenceDataSource>()
+-> Router<AppState<N, L, R>> {
     Router::new()
         .route(
             "/lines/{line}/stations/{station}/next-trains",
-            get(line_board::<N, L>),
+            get(line_board::<N, L, R>),
         )
         .route(
             "/stations/{station}/next-trains",
-            get(station_boards::<N, L>),
+            get(station_boards::<N, L, R>),
         )
 }
 
-async fn line_board<N: NextTrainSource, L: LineStatusSource>(
-    State(state): State<AppState<N, L>>,
+async fn line_board<N: NextTrainSource, L: LineStatusSource, R: ReferenceDataSource>(
+    State(state): State<AppState<N, L, R>>,
     Path((line, station)): Path<(String, String)>,
 ) -> Result<Response, ApiError> {
     let line = params::line(&line)?;
@@ -40,8 +43,8 @@ async fn line_board<N: NextTrainSource, L: LineStatusSource>(
     ))
 }
 
-async fn station_boards<N: NextTrainSource, L: LineStatusSource>(
-    State(state): State<AppState<N, L>>,
+async fn station_boards<N: NextTrainSource, L: LineStatusSource, R: ReferenceDataSource>(
+    State(state): State<AppState<N, L, R>>,
     Path(station): Path<String>,
 ) -> Result<Response, ApiError> {
     let station = params::station(&station)?;

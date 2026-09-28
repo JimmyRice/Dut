@@ -26,12 +26,15 @@ pub async fn run(config: AppConfig) -> Result<(), StartupError> {
         next_train_endpoint = mtr.next_train_endpoint,
         line_status_endpoint = mtr.line_status_endpoint,
         weather_warnings_endpoint = hko.warnings_endpoint,
+        open_data_endpoint = mtr.open_data_endpoint,
         mtr_request_timeout_ms = millis(mtr.request_timeout),
+        open_data_timeout_ms = millis(mtr.open_data_timeout),
         hko_request_timeout_ms = millis(hko.request_timeout),
         next_train_cache = ?mtr.next_train_cache,
         line_status_poll = ?polling.line_status,
         weather_warnings_poll = ?polling.weather_warnings,
         next_train_signals_poll = ?polling.next_train_signals,
+        open_data_poll = ?polling.open_data,
         "starting server"
     );
 

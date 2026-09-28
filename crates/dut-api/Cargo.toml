@@ -17,5 +17,5 @@ jiff.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tower-http = { workspace = true, features = ["request-id", "trace"] }
+tower-http = { workspace = true, features = ["compression-gzip", "request-id", "trace"] }
 tracing.workspace = true

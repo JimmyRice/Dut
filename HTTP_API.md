@@ -14,6 +14,15 @@ Dut 是 MTRGo App 的数据整合后端。本文档记录全部对外 HTTP 接�
 - [3. 获取单线单站列车到站](#3-获取单线单站列车到站)
 - [4. 获取车站所有线路的列车到站](#4-获取车站所有线路的列车到站)
 - [5. 健康检查](#5-健康检查)
+- [开放数据接口的共同行为](#开放数据接口的共同行为)
+- [6. 开放数据索引](#6-开放数据索引)
+- [7. 获取开放数据原始文件](#7-获取开放数据原始文件)
+- [8. 获取车站与路线（开放数据）](#8-获取车站与路线开放数据)
+- [9. 获取港铁车费](#9-获取港铁车费)
+- [10. 获取机场快綫车费](#10-获取机场快綫车费)
+- [11. 获取轻铁车站与路线](#11-获取轻铁车站与路线)
+- [12. 获取轻铁车费](#12-获取轻铁车费)
+- [13. 获取无障碍设施](#13-获取无障碍设施)
 - [错误码](#错误码)
 - [附录 A：线路代码](#附录-a线路代码)
 - [附录 B：车站代码](#附录-b车站代码)
@@ -29,8 +38,9 @@ Dut 是 MTRGo App 的数据整合后端。本文档记录全部对外 HTTP 接�
 | 路径前缀 | 所有接口都在 `/api` 下 |
 | HTTP 方法 | 目前只有 `GET`（健康检查也接受 `HEAD`） |
 | 鉴权 | 暂无 |
-| 响应格式 | `application/json`，UTF-8。健康检查除外，它不返回响应体 |
-| 数据来源 | [MTR Next Train API](https://rt.data.gov.hk/v1/transport/mtr/getSchedule.php)、[MTR 线路状态 JSON](https://tnews.mtr.com.hk/alert/ryg_line_status.json) |
+| 响应格式 | `application/json`，UTF-8。健康检查不返回响应体；开放数据原始文件返回 `text/csv` |
+| 压缩 | 请求带 `Accept-Encoding: gzip` 时，响应以 gzip 压缩 |
+| 数据来源 | [MTR Next Train API](https://rt.data.gov.hk/v1/transport/mtr/getSchedule.php)、[MTR 线路状态 JSON](https://tnews.mtr.com.hk/alert/ryg_line_status.json)、[港铁开放数据平台](https://opendata.mtr.com.hk/) |
 
 ---
 
@@ -56,6 +66,10 @@ Dut 是 MTRGo App 的数据整合后端。本文档记录全部对外 HTTP 接�
 
 线路名和站名都以 `{ "en": "...", "tc": "..." }` 返回，`en` 是英文，`tc` 是繁体中文。客户端按用户语言取用即可，不需要为不同语言重复请求。
 
+### 金额
+
+车费一律以**港仙整数**表示：`490` 就是 HK$4.90。港铁公布的车费最多两位小数，用整数可以精确表示，客户端不会遇到浮点误差。显示时除以 100 即可。
+
 ### 行车方向
 
 每条线路有两个行车方向，用 `direction` 标识，取值为 `up` 或 `down`，与港铁数据源一致。`up` / `down` 只是稳定的 ID，本身不表示"往哪走"：大多数线路的 `up` 朝 `stations` 列表的末端，迪士尼綫却正好相反；将军澳綫和东铁綫还有支线。所以：
@@ -75,6 +89,7 @@ Dut 是 MTRGo App 的数据整合后端。本文档记录全部对外 HTTP 接�
 | 响应体 `stale: true` | 这份数据已超过新鲜期，服务端暂时拿不到更新的数据，先返回旧数据。App 可以显示"资料可能已过时"之类的提示。 |
 | 响应体 `generated_at` | 港铁生成这份数据的时间。通常比 `fetched_at` 早几秒。 |
 | 响应体 `fetched_at` | 本服务从港铁取回这份数据的时间。 |
+| 响应头 `ETag` | 开放数据接口才有。下次请求时放进 `If-None-Match`，数据没变就返回 `304 Not Modified`，不传输数据，见[开放数据接口的共同行为](#开放数据接口的共同行为)。 |
 
 ### 请求 ID
 
@@ -106,6 +121,14 @@ Dut 是 MTRGo App 的数据整合后端。本文档记录全部对外 HTTP 接�
 | `GET` | `/api/lines/{line}/stations/{station}/next-trains` | 获取某条线在某个车站的下几班列车 | 港铁 Next Train API |
 | `GET` | `/api/stations/{station}/next-trains` | 获取途经某个车站的所有线路的下几班列车（适合换乘站） | 港铁 Next Train API |
 | `GET` | `/api/health` | 健康检查，只返回 `200`，不返回响应体 | 不访问上游 |
+| `GET` | `/api/data` | 开放数据索引：各数据集和原始文件的版本 | 港铁开放数据平台 |
+| `GET` | `/api/data/sources/{file}` | 原样返回港铁开放数据的 CSV 文件 | 港铁开放数据平台 |
+| `GET` | `/api/data/stations` | 开放数据里的车站和各线路的行车路线（含支线） | 港铁开放数据平台 |
+| `GET` | `/api/data/fares` | 重铁任意两站的车费 | 港铁开放数据平台 |
+| `GET` | `/api/data/airport-express-fares` | 机场快綫车费 | 港铁开放数据平台 |
+| `GET` | `/api/data/light-rail` | 轻铁车站和路线 | 港铁开放数据平台 |
+| `GET` | `/api/data/light-rail-fares` | 轻铁任意两站的车费 | 港铁开放数据平台 |
+| `GET` | `/api/data/accessibility` | 无障碍设施目录和各站设施 | 港铁开放数据平台 |
 
 ---
 
@@ -662,6 +685,728 @@ date: Mon, 28 Sep 2026 16:44:12 GMT
 
 ---
 
+## 开放数据接口的共同行为
+
+第 6 至 13 节的接口都来自[港铁开放数据平台](https://opendata.mtr.com.hk/)的 7 个 CSV 文件：车站、车费、轻铁和无障碍设施。这些资料一年只变几次，适合 Local First 的 App 下载后存在本地，只在有变化时重新下载。
+
+**推荐的同步方式**：App 启动时请求一次[索引](#6-开放数据索引)，把每个数据集的 `revision` 和本地保存的比较，只下载有变化的数据集。也可以对每个接口发条件请求（带 `If-None-Match`），没变化时服务返回 `304`，不传输数据。
+
+- **后台拉取。** 服务启动时立即拉取全部 7 个文件，之后每 24 小时一次。请求本身不会触发上游调用。拉取失败时 5 分钟后重试。
+- **一致性。** 7 个文件在同一次拉取里读取，任何一个下载或清洗失败，这次拉取就整体作废，继续使用上一份完整数据。所以同一时刻各接口返回的数据互相对得上（例如车费里的车站代码一定能在车站资料里找到），原始 CSV 与清洗结果也出自同一份文件。
+- **`Cache-Control`。** `max-age` 是距下一次拉取的剩余秒数，最长约一天（86400 秒加 30 秒请求超时），并随时间递减。拉取一直失败时，旧数据以 `stale: true`、`Cache-Control: no-cache` 返回，最长顶替 30 天。
+- **`ETag`。** 每个响应都带弱 ETag，例如 `W/"0.2.1-5987f5c9680ce780"`。清洗后的数据集，ETag 由服务版本号和数据内容决定：港铁文件改了、但清洗结果没变时 ETag 不变；服务升级改了 JSON 结构时 ETag 会变。原始 CSV 的 ETag 只由文件字节决定。
+- **启动时。** 服务刚启动、第一次拉取还没完成时，请求会等它完成再返回。
+- **错误。** 从未成功拉取过，或最近一次成功拉取已超过新鲜期加 30 天，返回 `502 upstream_unavailable`。
+
+清洗后的 JSON 数据集都以同样三个字段开头：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `updated_at` | string（时间）或 `null` | 港铁最后一次修改这份数据所用文件的时间（取自上游 `Last-Modified`），上游没给时为 `null`。它往往是几个月甚至几年前，不代表数据过时 |
+| `fetched_at` | string（时间） | 本服务最近一次成功拉取的时间 |
+| `stale` | boolean | 最近的拉取是否失败、正在用旧数据顶替 |
+
+---
+
+## 6. 开放数据索引
+
+```
+GET /api/data
+```
+
+列出所有清洗后的数据集和所有原始文件，以及各自的 `revision`。App 只需请求这一个接口，就能判断哪些数据要重新下载。
+
+### 参数
+
+无。
+
+### 请求示例
+
+```bash
+curl http://127.0.0.1:3000/api/data
+```
+
+### 响应示例
+
+`200 OK`，响应头包含 `Cache-Control: public, max-age=86414`。
+
+以下为节选：`sources` 实际有 7 个文件，这里只展示 2 个。
+
+```json
+{
+  "fetched_at": "2026-09-29T03:08:55+08:00",
+  "stale": false,
+  "datasets": [
+    {
+      "name": "stations",
+      "path": "/api/data/stations",
+      "revision": "0.2.1-0d1201f5804cd4cd",
+      "updated_at": "2023-11-21T18:09:07+08:00"
+    },
+    {
+      "name": "fares",
+      "path": "/api/data/fares",
+      "revision": "0.2.1-5987f5c9680ce780",
+      "updated_at": "2026-04-03T01:02:50+08:00"
+    },
+    {
+      "name": "airport-express-fares",
+      "path": "/api/data/airport-express-fares",
+      "revision": "0.2.1-545393302ce4c18f",
+      "updated_at": "2025-06-22T01:05:16+08:00"
+    },
+    {
+      "name": "light-rail",
+      "path": "/api/data/light-rail",
+      "revision": "0.2.1-97a676332b659216",
+      "updated_at": "2026-07-05T00:58:02+08:00"
+    },
+    {
+      "name": "light-rail-fares",
+      "path": "/api/data/light-rail-fares",
+      "revision": "0.2.1-e9deb534253c3bde",
+      "updated_at": "2024-06-30T01:39:03+08:00"
+    },
+    {
+      "name": "accessibility",
+      "path": "/api/data/accessibility",
+      "revision": "0.2.1-b199444f08da98bf",
+      "updated_at": "2023-06-25T02:28:09+08:00"
+    }
+  ],
+  "sources": [
+    {
+      "file": "mtr_lines_and_stations.csv",
+      "path": "/api/data/sources/mtr_lines_and_stations.csv",
+      "revision": "55f8eab5c379633b",
+      "updated_at": "2023-11-21T18:09:07+08:00",
+      "bytes": 14161
+    },
+    {
+      "file": "mtr_lines_fares.csv",
+      "path": "/api/data/sources/mtr_lines_fares.csv",
+      "revision": "570e3401233f8a52",
+      "updated_at": "2026-04-03T01:02:50+08:00",
+      "bytes": 743938
+    }
+  ]
+}
+```
+
+### 字段说明
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `fetched_at` | string（时间） | 本服务最近一次成功拉取的时间 |
+| `stale` | boolean | 最近的拉取是否失败、正在用旧数据顶替 |
+| `datasets` | array | 清洗后的数据集，顺序固定 |
+| `datasets[].name` | string | 数据集名：`stations`、`fares`、`airport-express-fares`、`light-rail`、`light-rail-fares`、`accessibility` |
+| `datasets[].path` | string | 数据集的请求路径 |
+| `datasets[].revision` | string | 数据集版本，与该路径响应的 `ETag` 相同（去掉 `W/` 和引号）。只用于比较是否相等，不要解析它 |
+| `datasets[].updated_at` | string（时间）或 `null` | 同各数据集响应里的 `updated_at` |
+| `sources` | array | 原始文件，顺序固定 |
+| `sources[].file` | string | 港铁开放数据平台上的文件名 |
+| `sources[].path` | string | 原始文件的请求路径 |
+| `sources[].revision` | string | 文件版本，与该路径响应的 `ETag` 相同（去掉 `W/` 和引号），只随文件字节变化 |
+| `sources[].updated_at` | string（时间）或 `null` | 上游 `Last-Modified` |
+| `sources[].bytes` | integer | 文件大小（未压缩） |
+
+### 缓存行为
+
+见[开放数据接口的共同行为](#开放数据接口的共同行为)。索引本身不带 `ETag`，它很小，每次直接请求即可。
+
+### 错误
+
+| HTTP 状态 | `code` | 触发条件 |
+|---|---|---|
+| `502` | `upstream_unavailable` | 从未成功拉取到开放数据，或最近一次成功拉取已超过新鲜期加 30 天 |
+
+---
+
+## 7. 获取开放数据原始文件
+
+```
+GET /api/data/sources/{file}
+```
+
+**原样**返回港铁开放数据平台上的某个 CSV 文件，与上游逐字节相同（包括 BOM、`\r\n` 换行和原有的错字）。`{file}` 就是上游文件名，所以已经从 `https://opendata.mtr.com.hk/data/{file}` 下载的代码，只需把 base URL 换成本服务即可。
+
+需要干净、结构化的数据时，请改用第 8 至 13 节的接口。
+
+### 路径参数
+
+| 参数 | 说明 |
+|---|---|
+| `file` | 文件名，不区分大小写。只接受以下 7 个：`mtr_lines_and_stations.csv`、`mtr_lines_fares.csv`、`airport_express_fares.csv`、`light_rail_routes_and_stops.csv`、`light_rail_fares.csv`、`barrier_free_facility_category.csv`、`barrier_free_facilities.csv` |
+
+### 请求示例
+
+```bash
+curl -i http://127.0.0.1:3000/api/data/sources/airport_express_fares.csv
+```
+
+### 响应示例
+
+`200 OK`，`Content-Type: text/csv; charset=utf-8`。以下为节选，只展示前 5 行：
+
+```
+HTTP/1.1 200 OK
+content-type: text/csv; charset=utf-8
+cache-control: public, max-age=86364
+etag: W/"e289177a7cb46ae8"
+vary: accept-encoding
+content-length: 691
+
+ST_FROM,ST_FROM_ID,ST_TO,ST_TO_ID,OCT_ADT_FARE,OCT_CHD_FARE,SINGLE_ADT_FARE,SINGLE_CHD_FARE
+HongKong,44,Airport,47,120,60,130,65
+HongKong,44,AsiaWorld-Expo,56,120,60,130,65
+Kowloon,45,Airport,47,105,52.5,115,57.5
+Kowloon,45,AsiaWorld-Expo,56,105,52.5,115,57.5
+```
+
+### 字段说明
+
+响应体就是港铁的 CSV 文件，列的含义见港铁开放数据平台的说明文件。
+
+### 缓存行为
+
+见[开放数据接口的共同行为](#开放数据接口的共同行为)。`ETag` 只随文件字节变化，服务升级不会让它改变。
+
+### 错误
+
+| HTTP 状态 | `code` | 触发条件 |
+|---|---|---|
+| `404` | `unknown_source` | `file` 不是上面 7 个文件名之一 |
+| `502` | `upstream_unavailable` | 从未成功拉取到开放数据，或最近一次成功拉取已超过新鲜期加 30 天 |
+
+---
+
+## 8. 获取车站与路线（开放数据）
+
+```
+GET /api/data/stations
+```
+
+返回港铁开放数据里的重铁车站列表，以及每条线的每条行车路线，来自 `mtr_lines_and_stations.csv`。
+
+它与 [`GET /api/lines`](#1-获取线路与车站资料) 的区别：`/api/lines` 是编译进服务的静态资料，列车到站接口依赖它；本接口原样反映港铁最新发布的内容。两者目前一致，只有马场（`RAC`）不在开放数据里。两者不一致时（例如新车站开通），服务日志会提示更新静态资料，见 README 的 `scripts/sync-network.py`。
+
+清洗内容：
+
+- 数字车站 ID 换成车站代码，站名去掉多余空格。
+- 「茘」（荔景、荔枝角）统一成标准写法「荔」。
+- 去掉文件末尾的空行。
+- 支线单独成为一条路线，用 `from` 和 `towards` 区分，不使用 `LMC-UT` 这类内部代号。
+
+### 参数
+
+无。
+
+### 请求示例
+
+```bash
+curl http://127.0.0.1:3000/api/data/stations
+```
+
+### 响应示例
+
+`200 OK`。以下为节选：实际有 97 个车站、10 条线，这里只展示 2 个车站和将军澳綫。
+
+```json
+{
+  "updated_at": "2023-11-21T18:09:07+08:00",
+  "fetched_at": "2026-09-29T03:08:55+08:00",
+  "stale": false,
+  "stations": [
+    {
+      "code": "ADM",
+      "name": { "en": "Admiralty", "tc": "金鐘" },
+      "lines": ["EAL", "SIL", "TWL", "ISL"]
+    },
+    {
+      "code": "LAK",
+      "name": { "en": "Lai King", "tc": "荔景" },
+      "lines": ["TCL", "TWL"]
+    }
+  ],
+  "lines": [
+    {
+      "code": "TKL",
+      "name": { "en": "Tseung Kwan O Line", "tc": "將軍澳綫" },
+      "routes": [
+        {
+          "direction": "up",
+          "from": { "code": "NOP", "name": { "en": "North Point", "tc": "北角" } },
+          "towards": { "code": "POA", "name": { "en": "Po Lam", "tc": "寶琳" } },
+          "stations": ["NOP", "QUB", "YAT", "TIK", "TKO", "HAH", "POA"]
+        },
+        {
+          "direction": "up",
+          "from": { "code": "TIK", "name": { "en": "Tiu Keng Leng", "tc": "調景嶺" } },
+          "towards": { "code": "LHP", "name": { "en": "LOHAS Park", "tc": "康城" } },
+          "stations": ["TIK", "TKO", "LHP"]
+        },
+        {
+          "direction": "down",
+          "from": { "code": "POA", "name": { "en": "Po Lam", "tc": "寶琳" } },
+          "towards": { "code": "NOP", "name": { "en": "North Point", "tc": "北角" } },
+          "stations": ["POA", "HAH", "TKO", "TIK", "YAT", "QUB", "NOP"]
+        },
+        {
+          "direction": "down",
+          "from": { "code": "LHP", "name": { "en": "LOHAS Park", "tc": "康城" } },
+          "towards": { "code": "TIK", "name": { "en": "Tiu Keng Leng", "tc": "調景嶺" } },
+          "stations": ["LHP", "TKO", "TIK"]
+        }
+      ]
+    }
+  ]
+}
+```
+
+### 字段说明
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `updated_at`、`fetched_at`、`stale` | | 见[开放数据接口的共同行为](#开放数据接口的共同行为) |
+| `stations` | array | 车站，按代码排序 |
+| `stations[].code` | string | 车站代码 |
+| `stations[].name` | object | 开放数据里的双语站名 `{ en, tc }` |
+| `stations[].lines` | array of string | 途经该站的线路代码，按[附录 A](#附录-a线路代码)的顺序 |
+| `lines` | array | 线路，按附录 A 的顺序；开放数据里没有路线的线路（轻铁）不列出 |
+| `lines[].code`、`lines[].name` | | 线路代码和双语线路名 |
+| `lines[].routes` | array | 行车路线：先 `up` 后 `down`，同方向先主线后支线 |
+| `lines[].routes[].direction` | string | `up` 或 `down`，与[行车方向](#行车方向)一致 |
+| `lines[].routes[].from` | object | 路线起点 `{ code, name }` |
+| `lines[].routes[].towards` | object | 路线终点 `{ code, name }`，用来向用户区分主线和支线 |
+| `lines[].routes[].stations` | array of string | 依次停靠的车站代码。支线路线可能只列支线本身，例如往康城的路线从調景嶺开始 |
+
+注意迪士尼綫的 `up` 是从迪士尼开往欣澳，与港铁 Next Train API 一致。
+
+### 缓存行为
+
+见[开放数据接口的共同行为](#开放数据接口的共同行为)。
+
+### 错误
+
+| HTTP 状态 | `code` | 触发条件 |
+|---|---|---|
+| `502` | `upstream_unavailable` | 从未成功拉取到开放数据，或最近一次成功拉取已超过新鲜期加 30 天 |
+
+---
+
+## 9. 获取港铁车费
+
+```
+GET /api/data/fares
+```
+
+返回重铁任意两站之间的车费，来自 `mtr_lines_fares.csv`，不含机场快綫（见第 10 节）。金额单位是**港仙**，见[金额](#金额)。
+
+清洗内容：
+
+- 数字车站 ID 换成车站代码。马场不在车站列表里，按站名对应到 `RAC`。
+- 去掉起点和终点相同的行。
+
+### 参数
+
+无。
+
+### 请求示例
+
+```bash
+curl --compressed http://127.0.0.1:3000/api/data/fares
+```
+
+响应约 1.7 MB，gzip 后约 75 KB，请求时请带 `Accept-Encoding: gzip`（curl 用 `--compressed`，`URLSession` 默认就会带）。
+
+### 响应示例
+
+`200 OK`，响应头包含 `ETag: W/"0.2.1-5987f5c9680ce780"`。以下为节选：实际有 9120 个行程，这里只展示 2 个。
+
+```json
+{
+  "updated_at": "2026-04-03T01:02:50+08:00",
+  "fetched_at": "2026-09-29T03:08:55+08:00",
+  "stale": false,
+  "fares": [
+    {
+      "from": "CEN",
+      "to": "ADM",
+      "octopus": {
+        "adult": 490,
+        "student": 320,
+        "joyyou_sixty": 200,
+        "child": 320,
+        "elderly": 200,
+        "disability": 200
+      },
+      "single_journey": { "adult": 500, "child": 350, "elderly": 350 }
+    },
+    {
+      "from": "RAC",
+      "to": "FOT",
+      "octopus": {
+        "adult": 770,
+        "student": 380,
+        "joyyou_sixty": 770,
+        "child": 380,
+        "elderly": 200,
+        "disability": 200
+      },
+      "single_journey": { "adult": 800, "child": 400, "elderly": 400 }
+    }
+  ]
+}
+```
+
+### 字段说明
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `updated_at`、`fetched_at`、`stale` | | 见[开放数据接口的共同行为](#开放数据接口的共同行为) |
+| `fares` | array | 行程，按起点代码、再按终点代码排序。A→B 和 B→A 各占一项 |
+| `fares[].from` | string | 起点车站代码 |
+| `fares[].to` | string | 终点车站代码 |
+| `fares[].octopus.adult` | integer | 八达通成人车费（港仙） |
+| `fares[].octopus.student` | integer | 学生八达通（学生乘车优惠计划） |
+| `fares[].octopus.joyyou_sixty` | integer | 乐悠咭（60 至 64 岁） |
+| `fares[].octopus.child` | integer | 小童八达通 |
+| `fares[].octopus.elderly` | integer | 长者八达通（65 岁或以上） |
+| `fares[].octopus.disability` | integer | 残疾人士 |
+| `fares[].single_journey.adult` | integer | 单程票成人 |
+| `fares[].single_journey.child` | integer | 单程票小童 |
+| `fares[].single_journey.elderly` | integer | 单程票长者 |
+
+### 缓存行为
+
+见[开放数据接口的共同行为](#开放数据接口的共同行为)。
+
+### 错误
+
+| HTTP 状态 | `code` | 触发条件 |
+|---|---|---|
+| `502` | `upstream_unavailable` | 从未成功拉取到开放数据，或最近一次成功拉取已超过新鲜期加 30 天 |
+
+---
+
+## 10. 获取机场快綫车费
+
+```
+GET /api/data/airport-express-fares
+```
+
+返回机场快綫各站之间的车费，来自 `airport_express_fares.csv`。机场快綫只分成人和小童票价。金额单位是**港仙**。
+
+港铁文件为机场快綫的香港、九龍、青衣使用了独立的 ID（44 至 46），这里统一换成与其他线路相同的车站代码 `HOK`、`KOW`、`TSY`。
+
+### 参数
+
+无。
+
+### 请求示例
+
+```bash
+curl http://127.0.0.1:3000/api/data/airport-express-fares
+```
+
+### 响应示例
+
+`200 OK`。以下为节选：实际有 14 个行程，这里只展示 1 个。
+
+```json
+{
+  "updated_at": "2025-06-22T01:05:16+08:00",
+  "fetched_at": "2026-09-29T03:08:55+08:00",
+  "stale": false,
+  "fares": [
+    {
+      "from": "HOK",
+      "to": "AIR",
+      "octopus": { "adult": 12000, "child": 6000 },
+      "single_journey": { "adult": 13000, "child": 6500 }
+    }
+  ]
+}
+```
+
+### 字段说明
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `updated_at`、`fetched_at`、`stale` | | 见[开放数据接口的共同行为](#开放数据接口的共同行为) |
+| `fares` | array | 行程，按起点代码、再按终点代码排序 |
+| `fares[].from`、`fares[].to` | string | 起点、终点车站代码 |
+| `fares[].octopus.adult`、`fares[].octopus.child` | integer | 八达通成人、小童车费（港仙） |
+| `fares[].single_journey.adult`、`fares[].single_journey.child` | integer | 单程票成人、小童车费（港仙） |
+
+### 缓存行为
+
+见[开放数据接口的共同行为](#开放数据接口的共同行为)。
+
+### 错误
+
+| HTTP 状态 | `code` | 触发条件 |
+|---|---|---|
+| `502` | `upstream_unavailable` | 从未成功拉取到开放数据，或最近一次成功拉取已超过新鲜期加 30 天 |
+
+---
+
+## 11. 获取轻铁车站与路线
+
+```
+GET /api/data/light-rail
+```
+
+返回轻铁的所有车站，以及每条路线在每个方向依次停靠的车站，来自 `light_rail_routes_and_stops.csv`。
+
+- 轻铁车站以数字 `id` 标识，港铁轻铁实时到站 API 用的也是这个数字。
+- 轻铁车站的三字母 `code` 与重铁车站代码是两套独立的编号，不能混用。
+
+清洗内容：
+
+- 路线按路线号排序（`614` 在 `614P` 之前），不按文件里的顺序。
+- 同一站在路线上连续出现两次（总站掉头处）时只保留一次。
+
+### 参数
+
+无。
+
+### 请求示例
+
+```bash
+curl http://127.0.0.1:3000/api/data/light-rail
+```
+
+### 响应示例
+
+`200 OK`。以下为节选：实际有 68 个车站、11 条路线，这里只展示 1 个车站和 505 路线。
+
+```json
+{
+  "updated_at": "2026-07-05T00:58:02+08:00",
+  "fetched_at": "2026-09-29T03:08:55+08:00",
+  "stale": false,
+  "stops": [
+    {
+      "id": 1,
+      "code": "FEP",
+      "name": { "en": "Tuen Mun Ferry Pier", "tc": "屯門碼頭" },
+      "routes": ["507", "610", "614", "614P", "615", "615P"]
+    }
+  ],
+  "routes": [
+    {
+      "route": "505",
+      "directions": [
+        {
+          "from": { "id": 920, "name": { "en": "Sam Shing", "tc": "三聖" } },
+          "towards": { "id": 100, "name": { "en": "Siu Hong", "tc": "兆康" } },
+          "stops": [920, 265, 270, 280, 295, 60, 190, 180, 170, 160, 150, 140, 130, 120, 110, 100]
+        },
+        {
+          "from": { "id": 100, "name": { "en": "Siu Hong", "tc": "兆康" } },
+          "towards": { "id": 920, "name": { "en": "Sam Shing", "tc": "三聖" } },
+          "stops": [100, 120, 130, 140, 150, 160, 170, 200, 60, 295, 280, 270, 265, 920]
+        }
+      ]
+    }
+  ]
+}
+```
+
+### 字段说明
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `updated_at`、`fetched_at`、`stale` | | 见[开放数据接口的共同行为](#开放数据接口的共同行为) |
+| `stops` | array | 车站，按 `id` 排序 |
+| `stops[].id` | integer | 车站编号 |
+| `stops[].code` | string | 三字母车站代码 |
+| `stops[].name` | object | 双语站名 `{ en, tc }` |
+| `stops[].routes` | array of string | 停靠该站的路线号，按路线号排序 |
+| `routes` | array | 路线，按路线号排序 |
+| `routes[].route` | string | 路线号，例如 `505`、`614P` |
+| `routes[].directions` | array | 各方向，顺序与港铁文件的方向 1、2 一致 |
+| `routes[].directions[].from` | object | 起点 `{ id, name }` |
+| `routes[].directions[].towards` | object | 终点 `{ id, name }` |
+| `routes[].directions[].stops` | array of integer | 依次停靠的车站编号。天水围的循环线（705、706）在文件里被拆成两段，在折返处相接 |
+
+### 缓存行为
+
+见[开放数据接口的共同行为](#开放数据接口的共同行为)。
+
+### 错误
+
+| HTTP 状态 | `code` | 触发条件 |
+|---|---|---|
+| `502` | `upstream_unavailable` | 从未成功拉取到开放数据，或最近一次成功拉取已超过新鲜期加 30 天 |
+
+---
+
+## 12. 获取轻铁车费
+
+```
+GET /api/data/light-rail-fares
+```
+
+返回轻铁任意两站之间的车费，来自 `light_rail_fares.csv`。车站以编号标识，与第 11 节的 `stops[].id` 对应。票种与港铁车费相同，金额单位是**港仙**。
+
+### 参数
+
+无。
+
+### 请求示例
+
+```bash
+curl --compressed http://127.0.0.1:3000/api/data/light-rail-fares
+```
+
+响应约 810 KB，gzip 后约 18 KB。
+
+### 响应示例
+
+`200 OK`。以下为节选：实际有 4556 个行程，这里只展示 1 个。
+
+```json
+{
+  "updated_at": "2024-06-30T01:39:03+08:00",
+  "fetched_at": "2026-09-29T03:08:55+08:00",
+  "stale": false,
+  "fares": [
+    {
+      "from": 1,
+      "to": 10,
+      "octopus": {
+        "adult": 510,
+        "student": 220,
+        "joyyou_sixty": 200,
+        "child": 220,
+        "elderly": 200,
+        "disability": 200
+      },
+      "single_journey": { "adult": 550, "child": 300, "elderly": 300 }
+    }
+  ]
+}
+```
+
+### 字段说明
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `updated_at`、`fetched_at`、`stale` | | 见[开放数据接口的共同行为](#开放数据接口的共同行为) |
+| `fares` | array | 行程，按起点编号、再按终点编号排序；去掉起点和终点相同的行 |
+| `fares[].from`、`fares[].to` | integer | 起点、终点轻铁车站编号 |
+| `fares[].octopus`、`fares[].single_journey` | object | 与[港铁车费](#9-获取港铁车费)的同名字段相同 |
+
+### 缓存行为
+
+见[开放数据接口的共同行为](#开放数据接口的共同行为)。
+
+### 错误
+
+| HTTP 状态 | `code` | 触发条件 |
+|---|---|---|
+| `502` | `upstream_unavailable` | 从未成功拉取到开放数据，或最近一次成功拉取已超过新鲜期加 30 天 |
+
+---
+
+## 13. 获取无障碍设施
+
+```
+GET /api/data/accessibility
+```
+
+返回港铁的无障碍设施目录，以及每个车站提供的设施，由 `barrier_free_facility_category.csv`（目录）和 `barrier_free_facilities.csv`（各站情况）合并而成。
+
+清洗内容：
+
+- 数字车站 ID 换成车站代码，马场按车费文件里的站名对应到 `RAC`。
+- 设施名称里的 HTML 实体（例如 `&#32171;`）解码成文字（綫）。
+- 每个车站只列出有提供（`Y`）的设施。一个设施也不提供的记录（例如无法识别的车站 `888`）不列出。
+- 位置文字去掉多余空格，换行保留为 `\n`。
+
+### 参数
+
+无。
+
+### 请求示例
+
+```bash
+curl --compressed http://127.0.0.1:3000/api/data/accessibility
+```
+
+### 响应示例
+
+`200 OK`。以下为节选：实际有 4 个类别、36 种设施、98 个车站，这里每处只展示几项。
+
+```json
+{
+  "updated_at": "2023-06-25T02:28:09+08:00",
+  "fetched_at": "2026-09-29T03:08:55+08:00",
+  "stale": false,
+  "categories": [
+    {
+      "category": "station_access",
+      "name": { "en": "System Accessibility", "tc": "出入口設施" },
+      "facilities": [
+        { "code": "AJ1", "name": { "en": "Same Level", "tc": "同一層" } },
+        { "code": "AJ2", "name": { "en": "Ramp", "tc": "斜道" } }
+      ]
+    },
+    {
+      "category": "visually_impaired",
+      "name": { "en": "Facilities for Visually Impaired", "tc": "視覺受損人士設施" },
+      "facilities": [
+        { "code": "VJ1", "name": { "en": "Tactile Guide Paths", "tc": "失明人士引導徑" } },
+        { "code": "VJ2", "name": { "en": "Escalator Audible Warning Signals", "tc": "扶手電梯發聲提示器" } }
+      ]
+    }
+  ],
+  "stations": [
+    {
+      "station": { "code": "ADM", "name": { "en": "Admiralty", "tc": "金鐘" } },
+      "facilities": [
+        { "code": "AJ3", "location": { "en": "Exit E", "tc": "E 出口" } },
+        { "code": "AJ5", "location": { "en": "Exits A & D", "tc": "A 和 D 出口" } },
+        { "code": "AJ8", "location": null },
+        { "code": "VJ1", "location": null }
+      ]
+    }
+  ]
+}
+```
+
+### 字段说明
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `updated_at`、`fetched_at`、`stale` | | 见[开放数据接口的共同行为](#开放数据接口的共同行为)。`updated_at` 取两个文件中较晚的一个 |
+| `categories` | array | 设施类别，顺序固定：`station_access`、`visually_impaired`、`hearing_impaired`、`mobility_impaired` |
+| `categories[].category` | string | 类别：`station_access` 是进出车站的方式（同层、斜道、升降机、轮椅升降台等，港铁称"出入口設施"）；另外三个分别是视障、听障、行动不便人士设施 |
+| `categories[].name` | object | 港铁的双语类别名 |
+| `categories[].facilities` | array | 该类别下的设施，按港铁的排序 |
+| `categories[].facilities[].code` | string | 设施代码，例如 `AJ3`，大小写照原样（例如 `VIn1`） |
+| `categories[].facilities[].name` | object | 双语设施名 |
+| `stations` | array | 车站，按车站代码排序 |
+| `stations[].station` | object | 车站 `{ code, name }`，站名来自服务内置的静态资料 |
+| `stations[].facilities` | array | 该站提供的设施，按目录顺序 |
+| `stations[].facilities[].code` | string | 设施代码，对应 `categories[].facilities[].code` |
+| `stations[].facilities[].location` | object 或 `null` | 设施位置的双语文字，例如 `Exits A & D`；港铁没给时为 `null`。它是自由文本，格式不统一，适合直接显示，不适合解析 |
+
+### 缓存行为
+
+见[开放数据接口的共同行为](#开放数据接口的共同行为)。
+
+### 错误
+
+| HTTP 状态 | `code` | 触发条件 |
+|---|---|---|
+| `502` | `upstream_unavailable` | 从未成功拉取到开放数据，或最近一次成功拉取已超过新鲜期加 30 天 |
+
+---
+
 ## 错误码
 
 | HTTP 状态 | `code` | 说明 |
@@ -670,6 +1415,7 @@ date: Mon, 28 Sep 2026 16:44:12 GMT
 | `404` | `unknown_line` | 线路代码不存在 |
 | `404` | `unknown_station` | 车站代码格式错误或车站不存在 |
 | `404` | `station_not_on_line` | 线路不经过该车站 |
+| `404` | `unknown_source` | 开放数据文件名不存在 |
 | `502` | `upstream_unavailable` | 上游数据源（港铁）不可用，且没有可用的旧数据 |
 
 错误响应里的 `message` 不会回显客户端输入，也不会包含上游错误细节。上游错误的完整信息只记录在服务端日志里，用 `x-request-id` 查找。
@@ -715,6 +1461,7 @@ date: Mon, 28 Sep 2026 16:44:12 GMT
 
 | 日期 | 变更 |
 |---|---|
+| 2026-09-29 | 新增港铁开放数据接口：`GET /api/data`（索引）、`GET /api/data/sources/{file}`（原样的 CSV 文件）、`GET /api/data/stations`、`GET /api/data/fares`、`GET /api/data/airport-express-fares`、`GET /api/data/light-rail`、`GET /api/data/light-rail-fares`、`GET /api/data/accessibility`。数据每天拉取一次，响应带 `ETag`，支持 `If-None-Match` 返回 `304`；车费以港仙整数表示。所有响应在客户端接受时以 gzip 压缩。新增错误码 `404 unknown_source`。 |
 | 2026-09-29 | 新增 `GET /api/health` 健康检查：返回 `200`、空响应体和 `Cache-Control: no-store`，不访问上游，不记入请求日志。 |
 | 2026-09-28 | `GET /api/lines/status` 改为读取后台每 30 秒一次的轮询结果。`max-age` 最多为 33，并随距下一次轮询的时间递减；上游正常时不再出现 `stale: true`。响应字段不变。 |
 | 2026-09-28 | 文档修正：错误码表移除 `500 internal_error`。服务从未返回过这个错误码，客户端行为不受影响。 |

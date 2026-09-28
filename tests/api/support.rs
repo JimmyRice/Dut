@@ -3,7 +3,7 @@
 use axum::{
     Router,
     body::{Body, Bytes, to_bytes},
-    http::{HeaderMap, Method, Request, StatusCode, header},
+    http::{HeaderMap, HeaderName, Method, Request, StatusCode, header},
 };
 use dut::{AppConfig, build_app};
 use jiff::{Timestamp, tz};
@@ -17,6 +17,22 @@ use wiremock::{
 pub(crate) const NEXT_TRAIN_PATH: &str = "/v1/transport/mtr/getSchedule.php";
 pub(crate) const LINE_STATUS_PATH: &str = "/alert/ryg_line_status.json";
 const WEATHER_WARNINGS_PATH: &str = "/weatherAPI/opendata/weather.php";
+const OPEN_DATA_PATH: &str = "/data/";
+
+/// The files on the MTR's open data portal, as `tests/fixtures` holds them.
+/// The two fare files are trimmed to trips between a few stops.
+pub(crate) const OPEN_DATA_FILES: [&str; 7] = [
+    "mtr_lines_and_stations.csv",
+    "mtr_lines_fares.csv",
+    "airport_express_fares.csv",
+    "light_rail_routes_and_stops.csv",
+    "light_rail_fares.csv",
+    "barrier_free_facility_category.csv",
+    "barrier_free_facilities.csv",
+];
+
+/// The `Last-Modified` the fake portal sends with every file.
+pub(crate) const OPEN_DATA_LAST_MODIFIED: &str = "Thu, 02 Apr 2026 17:02:50 GMT";
 
 /// The application wired to a fake upstream.
 pub(crate) struct TestApp {
@@ -33,9 +49,10 @@ impl TestApp {
 
     /// The application wired to `upstream`.
     ///
-    /// Background polls read line status and weather warnings as soon as the
-    /// application is built, so mount what they should find first. Weather
-    /// warnings default to none in force.
+    /// Background polls read line status, weather warnings, and open data as
+    /// soon as the application is built, so mount what they should find
+    /// first. Weather warnings default to none in force; open data is
+    /// unavailable unless [`mount_open_data`] was called.
     pub(crate) async fn serving(upstream: MockServer) -> Self {
         Mock::given(method("GET"))
             .and(path(WEATHER_WARNINGS_PATH))
@@ -51,6 +68,7 @@ impl TestApp {
                 "{}{WEATHER_WARNINGS_PATH}?dataType=warningInfo&lang=en",
                 upstream.uri()
             ))
+            .with_mtr_open_data_endpoint(format!("{}{OPEN_DATA_PATH}", upstream.uri()))
             .without_proxy();
         let router = build_app(&config).expect("test application should build");
 
@@ -76,13 +94,26 @@ impl TestApp {
     /// Sends a request without a body and keeps the response body as bytes,
     /// for routes that do not answer with JSON.
     pub(crate) async fn send(&self, method: Method, uri: &str) -> RawResponse {
+        self.send_with_headers(method, uri, &[]).await
+    }
+
+    /// Sends a request with the given headers, such as `If-None-Match`, and
+    /// keeps the response body as bytes.
+    pub(crate) async fn send_with_headers(
+        &self,
+        method: Method,
+        uri: &str,
+        headers: &[(HeaderName, &str)],
+    ) -> RawResponse {
+        let mut request = Request::builder().method(method).uri(uri);
+        for (name, value) in headers {
+            request = request.header(name, *value);
+        }
         let response = self
             .router
             .clone()
             .oneshot(
-                Request::builder()
-                    .method(method)
-                    .uri(uri)
+                request
                     .body(Body::empty())
                     .expect("request should be valid"),
             )
@@ -108,6 +139,15 @@ pub(crate) struct RawResponse {
     pub status: StatusCode,
     pub headers: HeaderMap,
     pub body: Bytes,
+}
+
+impl RawResponse {
+    pub(crate) fn header(&self, name: header::HeaderName) -> &str {
+        self.headers
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+    }
 }
 
 pub(crate) struct TestResponse {
@@ -237,4 +277,33 @@ pub(crate) fn line_status_fixture() -> Value {
     );
     let body = std::fs::read(path).expect("fixture should exist");
     serde_json::from_slice(&body).expect("fixture should be valid JSON")
+}
+
+/// A captured file from the MTR's open data portal.
+pub(crate) fn open_data_fixture(file: &str) -> Vec<u8> {
+    let path = format!(
+        "{}/tests/fixtures/mtr/open_data/{file}",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    std::fs::read(path).expect("fixture should exist")
+}
+
+/// Serves every captured open data file, except `failing`, which answers
+/// `500`.
+pub(crate) async fn mount_open_data(upstream: &MockServer, failing: Option<&str>) {
+    for file in OPEN_DATA_FILES {
+        let response = if Some(file) == failing {
+            ResponseTemplate::new(500)
+        } else {
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/csv")
+                .insert_header("last-modified", OPEN_DATA_LAST_MODIFIED)
+                .set_body_bytes(open_data_fixture(file))
+        };
+        Mock::given(method("GET"))
+            .and(path(format!("{OPEN_DATA_PATH}{file}")))
+            .respond_with(response)
+            .mount(upstream)
+            .await;
+    }
 }
