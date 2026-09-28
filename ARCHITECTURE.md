@@ -176,8 +176,10 @@ facilities) is seven CSV files that change a few times a year, and MTRGo
 keeps a local copy. The design follows from that:
 
 - **One poll, one consistent set.** `MtrOpenDataFeed` reads all seven files
-  together, once at startup and then daily, retrying a failure after five
-  minutes. A poll succeeds only if every file downloads and cleans, so the
+  in one poll, once at startup and then daily, retrying a failure after five
+  minutes. It reads them one after another over one kept-alive connection:
+  nobody waits on a daily poll, so reading them at once would only cost a
+  connection per file. A poll succeeds only if every file downloads and cleans, so the
   datasets always agree with each other and with the files, which are kept
   byte for byte and served at `/api/data/sources/{file}`.
 - **Clean at the boundary.** Station IDs become station codes, fares become

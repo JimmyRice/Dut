@@ -197,7 +197,7 @@ cargo test
 
 项目是一个 Cargo workspace，在根目录运行这三条命令会覆盖所有 crate；只想检查某一个 crate 时加上 `-p <crate>`，例如 `cargo test -p dut-core`。
 
-测试完全离线运行：路由测试在 `tests/api/`，用 `wiremock` 模拟港铁和天文台上游，上游样例数据在 `tests/fixtures/`，来自真实响应。
+测试完全离线运行：路由测试在 `tests/api/`，用 `wiremock` 模拟港铁和天文台上游，上游样例数据在 `tests/fixtures/`，来自真实响应。每个路由测试都会启动完整的服务，约占十几个文件描述符，测试框架按 CPU 核数并行运行；macOS 终端默认的上限只有 256，所以路由测试启动时会自行把上限提高到系统允许的最大值。
 
 ```text
 src/                 dut 程序本身：配置、组装依赖、启动服务

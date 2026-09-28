@@ -23,9 +23,13 @@ const UPSTREAM: &str = "mtr.open_data";
 /// whole and cleaned into datasets.
 ///
 /// The files change a few times a year, so they are read on a slow
-/// schedule and held by the poller; this adapter holds no cache. All seven
-/// are read together and a poll succeeds only if every one does, so the
-/// datasets always come from one consistent set of files.
+/// schedule and held by the poller; this adapter holds no cache. A poll
+/// reads all seven and succeeds only if every one does, so the datasets
+/// always come from one consistent set of files.
+///
+/// The files are read one after another, over one kept-alive connection:
+/// nobody waits on a daily poll, and reading them at once would open a
+/// connection per file for no benefit.
 #[derive(Clone, Debug)]
 pub struct MtrOpenDataFeed {
     http: OutboundHttpClient,
@@ -64,32 +68,18 @@ impl MtrOpenDataFeed {
     }
 
     async fn read(&self) -> Result<ReferenceData, OpenDataError> {
-        let (
-            lines_and_stations,
-            lines_fares,
-            airport_express_fares,
-            light_rail_routes_and_stops,
-            light_rail_fares,
-            barrier_free_facility_categories,
-            barrier_free_facilities,
-        ) = futures::try_join!(
-            self.download(SourceFile::LinesAndStations),
-            self.download(SourceFile::LinesFares),
-            self.download(SourceFile::AirportExpressFares),
-            self.download(SourceFile::LightRailRoutesAndStops),
-            self.download(SourceFile::LightRailFares),
-            self.download(SourceFile::BarrierFreeFacilityCategories),
-            self.download(SourceFile::BarrierFreeFacilities),
-        )?;
-        let data = clean::reference_data(BySourceFile {
-            lines_and_stations,
-            lines_fares,
-            airport_express_fares,
-            light_rail_routes_and_stops,
-            light_rail_fares,
-            barrier_free_facility_categories,
-            barrier_free_facilities,
-        })?;
+        let files = BySourceFile {
+            lines_and_stations: self.download(SourceFile::LinesAndStations).await?,
+            lines_fares: self.download(SourceFile::LinesFares).await?,
+            airport_express_fares: self.download(SourceFile::AirportExpressFares).await?,
+            light_rail_routes_and_stops: self.download(SourceFile::LightRailRoutesAndStops).await?,
+            light_rail_fares: self.download(SourceFile::LightRailFares).await?,
+            barrier_free_facility_categories: self
+                .download(SourceFile::BarrierFreeFacilityCategories)
+                .await?,
+            barrier_free_facilities: self.download(SourceFile::BarrierFreeFacilities).await?,
+        };
+        let data = clean::reference_data(files)?;
 
         info!(
             stations = data.stations.value().stations.len(),

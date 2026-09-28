@@ -1,5 +1,7 @@
 //! Shared helpers for route-level tests.
 
+use std::sync::Once;
+
 use axum::{
     Router,
     body::{Body, Bytes, to_bytes},
@@ -54,6 +56,7 @@ impl TestApp {
     /// first. Weather warnings default to none in force; open data is
     /// unavailable unless [`mount_open_data`] was called.
     pub(crate) async fn serving(upstream: MockServer) -> Self {
+        raise_open_file_limit();
         Mock::given(method("GET"))
             .and(path(WEATHER_WARNINGS_PATH))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
@@ -132,6 +135,22 @@ impl TestApp {
             body,
         }
     }
+}
+
+/// Lifts this process's soft limit on open files to its hard limit.
+///
+/// Each route test runs the whole application against its own fake
+/// upstream, which takes about a dozen file descriptors, and the harness runs
+/// one test per core. A terminal on macOS starts with a soft limit of 256,
+/// which a many-core machine exhausts, failing tests at random with "Too many
+/// open files".
+fn raise_open_file_limit() {
+    static RAISED: Once = Once::new();
+    RAISED.call_once(|| {
+        if let Err(error) = rlimit::increase_nofile_limit(u64::MAX) {
+            eprintln!("could not raise the open file limit: {error}");
+        }
+    });
 }
 
 /// A response whose body is kept as received.
