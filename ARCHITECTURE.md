@@ -42,7 +42,7 @@ HTTP request
 src/
   domain/          network (lines, stations), next_train, line_status, time
   application/     source (Snapshot, Freshness), next_train, line_status
-  infrastructure/  http_client, http_freshness, cache, mtr/{next_train, line_status}
+  infrastructure/  http_client, http_freshness, cache, connectivity, mtr/{next_train, line_status}
   api/             dto, routes, error, http_cache, middleware
   bootstrap/       config, error (StartupError), server
   telemetry/       console logging, request_blocks (terminal view, one block per request)
@@ -95,6 +95,12 @@ only to localize a special arrangement notice.
 API responses carry `Cache-Control: public, max-age=<remaining freshness>`,
 or `no-cache` when stale, so HTTP caches downstream can safely add another
 layer.
+
+At startup, `infrastructure::connectivity::ConnectivityCheck` requests one
+document from every upstream in the background and logs whether each could be
+reached. Each adapter supplies its own probe request, so the check uses the
+same URLs and timeouts as real traffic. It only reports: a failed probe does
+not stop the server, since the caches already retry and serve stale data.
 
 The cache is in-process and assumes a single instance. Running several
 instances multiplies upstream load by the instance count; at that point,

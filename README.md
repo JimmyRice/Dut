@@ -161,6 +161,7 @@ gh attestation verify dut-x86_64-unknown-linux-musl.tar.gz -R JimmyRice/Dut
 - **日志级别**：用 `RUST_LOG` 设置，默认值是 `info,dut=debug,tower_http=debug`，会输出缓存命中等调试信息。想安静一些可以用 `RUST_LOG=info cargo run`。
 - **在终端里运行时**：同一个请求的所有日志合成一块，开头是一行摘要，并带颜色。设置 `NO_COLOR=1` 可以关闭颜色。
 - **输出到文件或管道时**：每条日志一行，不带颜色，方便 `grep` 和日志收集工具处理。
+- **启动时的连通性检查**：开始监听后，服务会在后台向每个上游各发一个请求，检查能否连上并拿到 JSON，每个上游输出一行 `upstream reachable` 或 `upstream unreachable`（带耗时和错误原因），最后输出一行汇总：`every upstream is reachable` 或 `some upstreams are unreachable`。检查不会阻塞请求，也不会因为上游不通而退出，上游恢复后缓存会自动重试。
 
 ## 开发
 
@@ -199,3 +200,4 @@ tests/api/         路由级测试
 
 - 列车到站：[港铁 Next Train API](https://rt.data.gov.hk/v1/transport/mtr/getSchedule.php)，由香港政府的资料一线通（DATA.GOV.HK）发布
 - 线路状态：[港铁线路状态 JSON](https://tnews.mtr.com.hk/alert/ryg_line_status.json)
+- 天气：[香港天文台本港地区天气报告](https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=rhrread&lang=en)，目前没有接口使用，只在启动时做连通性检查
