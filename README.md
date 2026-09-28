@@ -148,6 +148,8 @@ Linux 版本是完全静态链接的 musl 程序，不依赖 glibc，在正常�
 
 Windows 版本静态链接了 C 运行时，不需要安装 Visual C++ Redistributable。
 
+发布的二进制文件和镜像都用 `Cargo.toml` 里的 `dist` profile 编译：开启 fat LTO，把所有 crate 和依赖当作一个整体优化，并去掉符号表。本地想得到和发布版一样的程序，可以运行 `cargo build --profile dist`，产物在 `target/dist/dut`，编译时间比 `--release` 长很多。
+
 在 Actions 页面手动运行 Release 工作流，会编译同样的 6 个文件，但只保存为工作流的 artifact，不创建 release，适合在打 tag 前检查工作流的改动。
 
 仓库公开后，二进制文件和镜像会附带 GitHub 签名的构建来源证明（artifact attestation），可以这样验证：

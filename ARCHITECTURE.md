@@ -71,7 +71,10 @@ tests/fixtures/   captured upstream responses, also read by dut-upstream's unit 
 `default-members` lists every crate, so `cargo build`, `cargo clippy`, and
 `cargo test` at the root cover the whole workspace; add `-p <crate>` for one.
 Dependency versions are pinned once in `[workspace.dependencies]`, and every
-crate inherits its version, edition, and lints from the workspace.
+crate inherits its version, edition, and lints from the workspace. Release
+archives and the container image are built with `[profile.dist]`, whose fat
+LTO optimises every crate and dependency as one program, so splitting the
+workspace costs no cross-crate inlining in what ships.
 
 ## Visibility
 
