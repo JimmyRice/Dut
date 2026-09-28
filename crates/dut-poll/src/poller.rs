@@ -21,7 +21,8 @@ use crate::{
 /// handle through which its latest value is read.
 ///
 /// The task stops once every handle and subscriber is dropped. A failed poll
-/// is logged and keeps the last value; polling carries on. A poll that
+/// is logged and keeps the last value; polling carries on, sooner when the
+/// schedule's `retry_after` is shorter than its interval. A poll that
 /// overruns the interval delays the next one rather than being followed by a
 /// burst of catch-up polls against a struggling upstream.
 ///
@@ -46,7 +47,13 @@ async fn run<F: Feed>(feed: F, schedule: Schedule, state: watch::Sender<FeedStat
 
     loop {
         tokio::select! {
-            _ = ticks.tick() => poll(&feed, &mut health, &state).await,
+            _ = ticks.tick() => {
+                let succeeded = poll(&feed, &mut health, &state).await;
+                if !succeeded && schedule.retry_after < schedule.interval {
+                    debug!(retry_after_ms = millis(schedule.retry_after), "retrying early");
+                    ticks.reset_after(schedule.retry_after);
+                }
+            }
             () = state.closed() => {
                 info!("no readers left; polling stopped");
                 return;
@@ -56,12 +63,13 @@ async fn run<F: Feed>(feed: F, schedule: Schedule, state: watch::Sender<FeedStat
 }
 
 /// Reads the feed once and publishes the outcome to readers in one update,
-/// so they never see a new value with stale health or the reverse.
+/// so they never see a new value with stale health or the reverse. Returns
+/// whether the read succeeded.
 async fn poll<F: Feed>(
     feed: &F,
     health: &mut SourceHealth,
     state: &watch::Sender<FeedState<F::Item>>,
-) {
+) -> bool {
     let started_at = Instant::now();
     let result = feed.fetch().await;
     let now = Instant::now();
@@ -85,11 +93,13 @@ async fn poll<F: Feed>(
         }
     };
 
+    let succeeded = polled.is_some();
     let current = health.state();
     state.send_modify(|state| state.record(polled, current));
     if let Some(previous) = change {
         log_health_change(previous, current, health.consecutive_failures());
     }
+    succeeded
 }
 
 fn log_health_change(previous: HealthState, current: HealthState, consecutive_failures: u32) {
@@ -169,6 +179,7 @@ mod tests {
     const SCHEDULE: Schedule = Schedule {
         interval: seconds(30),
         first_poll_after: Duration::ZERO,
+        retry_after: seconds(30),
         fresh_for: seconds(33),
         stale_if_error: seconds(900),
         blind_after: seconds(90),
@@ -214,6 +225,30 @@ mod tests {
 
         sleep(seconds(2)).await;
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retries_a_failed_poll_early_then_returns_to_the_interval() {
+        let (feed, calls) = ScriptedFeed::new([None, Some(1)]);
+        let schedule = Schedule {
+            interval: seconds(3_600),
+            retry_after: seconds(60),
+            ..SCHEDULE
+        };
+
+        let handle = spawn(feed, schedule);
+        sleep(seconds(1)).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(latest(&handle), None);
+
+        sleep(seconds(60)).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert_eq!(latest(&handle), Some(1));
+
+        sleep(seconds(3_598)).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        sleep(seconds(2)).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
     }
 
     #[tokio::test(start_paused = true)]

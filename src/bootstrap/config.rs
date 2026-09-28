@@ -39,6 +39,7 @@ const POLL_STALE_IF_ERROR: Duration = Duration::from_secs(15 * 60);
 const LINE_STATUS_POLL: Schedule = Schedule {
     interval: Duration::from_secs(30),
     first_poll_after: Duration::ZERO,
+    retry_after: Duration::from_secs(30),
     fresh_for: Duration::from_secs(30).saturating_add(MTR_REQUEST_TIMEOUT),
     stale_if_error: POLL_STALE_IF_ERROR,
     blind_after: Duration::from_secs(2 * 60),
@@ -49,6 +50,7 @@ const LINE_STATUS_POLL: Schedule = Schedule {
 const WEATHER_WARNINGS_POLL: Schedule = Schedule {
     interval: Duration::from_secs(60),
     first_poll_after: Duration::ZERO,
+    retry_after: Duration::from_secs(60),
     fresh_for: Duration::from_secs(60).saturating_add(HKO_REQUEST_TIMEOUT),
     stale_if_error: POLL_STALE_IF_ERROR,
     blind_after: Duration::from_secs(5 * 60),
@@ -59,6 +61,7 @@ const WEATHER_WARNINGS_POLL: Schedule = Schedule {
 const NEXT_TRAIN_SIGNALS_POLL: Schedule = Schedule {
     interval: Duration::from_secs(60),
     first_poll_after: Duration::from_secs(60),
+    retry_after: Duration::from_secs(60),
     fresh_for: Duration::from_secs(60).saturating_add(MTR_REQUEST_TIMEOUT),
     stale_if_error: POLL_STALE_IF_ERROR,
     blind_after: Duration::from_secs(5 * 60),

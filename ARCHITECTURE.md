@@ -197,6 +197,10 @@ poller keeps the last successful value, and a `FeedHandle` reads it.
 - **Stale-if-error.** A failed poll keeps the last value. It is served,
   marked stale, for 15 minutes past its freshness, then the endpoint returns
   `502`.
+- **Retry.** A feed polled rarely retries a failed poll sooner than its
+  interval (`retry_after`), so one failure does not leave it without data
+  until the next scheduled poll. The real-time feeds are polled often
+  enough that they simply wait for the next tick.
 - **First poll.** A request that arrives before the first poll finishes waits
   for it, so requests made just after startup do not fail.
 - **Source health.** Each poller tracks `starting`, `healthy`, `failing`, and
