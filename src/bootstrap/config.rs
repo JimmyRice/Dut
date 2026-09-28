@@ -15,6 +15,12 @@ const BIND_ADDRESS_VAR: &str = "DUT_BIND_ADDRESS";
 const NEXT_TRAIN_ENDPOINT: &str = "https://rt.data.gov.hk/v1/transport/mtr/getSchedule.php";
 const LINE_STATUS_ENDPOINT: &str = "https://tnews.mtr.com.hk/alert/ryg_line_status.json";
 
+/// The Hong Kong Observatory's current weather report. No endpoint serves
+/// weather yet; the startup connectivity check probes it alongside the MTR
+/// feeds, with the client-wide timeout.
+const WEATHER_ENDPOINT: &str =
+    "https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=rhrread&lang=en";
+
 /// Short enough that a slow upstream falls back to stale data quickly.
 const MTR_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
 
@@ -49,6 +55,7 @@ pub struct AppConfig {
     bind_address: SocketAddr,
     outbound_http_timeout: Duration,
     mtr: MtrConfig,
+    weather_endpoint: String,
 }
 
 /// Where and how to read the MTR's real-time feeds.
@@ -78,11 +85,13 @@ impl AppConfig {
         bind_address: SocketAddr,
         outbound_http_timeout: Duration,
         mtr: MtrConfig,
+        weather_endpoint: String,
     ) -> Self {
         Self {
             bind_address,
             outbound_http_timeout,
             mtr,
+            weather_endpoint,
         }
     }
 
@@ -120,6 +129,10 @@ impl AppConfig {
     pub(crate) const fn mtr(&self) -> &MtrConfig {
         &self.mtr
     }
+
+    pub(crate) fn weather_endpoint(&self) -> &str {
+        &self.weather_endpoint
+    }
 }
 
 impl Default for AppConfig {
@@ -128,6 +141,7 @@ impl Default for AppConfig {
             SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), DEFAULT_PORT),
             DEFAULT_HTTP_TIMEOUT,
             MtrConfig::default(),
+            WEATHER_ENDPOINT.to_owned(),
         )
     }
 }

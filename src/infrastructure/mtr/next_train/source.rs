@@ -26,6 +26,13 @@ use crate::{
 
 const UPSTREAM: &str = "mtr.next_train";
 
+/// The board the startup connectivity check asks for. Any board would do;
+/// the API answers with JSON even when no trains are running.
+const PROBE_BOARD: BoardKey = BoardKey {
+    line: Line::TseungKwanO,
+    station: StationCode::from_static("TKO"),
+};
+
 /// Next Train boards from the MTR open data API, cached per line and station.
 ///
 /// Boards are fetched in English only: the payload is language-neutral station
@@ -52,6 +59,12 @@ impl MtrNextTrainSource {
             },
             cache: RefreshingCache::new(UPSTREAM, policy),
         }
+    }
+
+    /// The request the startup connectivity check sends: one board in
+    /// English, the same kind of request a rider's lookup makes.
+    pub fn probe(&self) -> UpstreamRequest {
+        self.client.request(PROBE_BOARD, Language::English)
     }
 }
 
@@ -188,25 +201,26 @@ impl NextTrainClient {
         Localized::new(english, tc)
     }
 
-    async fn fetch_schedule(
-        &self,
-        key: BoardKey,
-        language: Language,
-    ) -> Result<(UpstreamResponse, Schedule), FetchError> {
+    fn request(&self, key: BoardKey, language: Language) -> UpstreamRequest {
         let mut url = self.endpoint.clone();
         url.query_pairs_mut()
             .append_pair("line", key.line.code())
             .append_pair("sta", key.station.as_str())
             .append_pair("lang", language.code());
 
-        let response = self
-            .http
-            .fetch(UpstreamRequest {
-                upstream: UPSTREAM,
-                url,
-                timeout: self.request_timeout,
-            })
-            .await?;
+        UpstreamRequest {
+            upstream: UPSTREAM,
+            url,
+            timeout: self.request_timeout,
+        }
+    }
+
+    async fn fetch_schedule(
+        &self,
+        key: BoardKey,
+        language: Language,
+    ) -> Result<(UpstreamResponse, Schedule), FetchError> {
+        let response = self.http.fetch(self.request(key, language)).await?;
         let schedule = response
             .json::<ScheduleResponse>()?
             .into_schedule(key.line, key.station, Timestamp::now())

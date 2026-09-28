@@ -47,6 +47,12 @@ impl MtrLineStatusSource {
             cache: RefreshingCache::new(UPSTREAM, policy),
         }
     }
+
+    /// The request the startup connectivity check sends: the whole feed,
+    /// which is one small document.
+    pub fn probe(&self) -> UpstreamRequest {
+        self.client.request()
+    }
 }
 
 impl LineStatusSource for MtrLineStatusSource {
@@ -89,15 +95,16 @@ struct LineStatusClient {
 }
 
 impl LineStatusClient {
+    fn request(&self) -> UpstreamRequest {
+        UpstreamRequest {
+            upstream: UPSTREAM,
+            url: self.endpoint.clone(),
+            timeout: self.request_timeout,
+        }
+    }
+
     async fn fetch(&self) -> Result<Fetched<NetworkStatus>, FetchError> {
-        let response = self
-            .http
-            .fetch(UpstreamRequest {
-                upstream: UPSTREAM,
-                url: self.endpoint.clone(),
-                timeout: self.request_timeout,
-            })
-            .await?;
+        let response = self.http.fetch(self.request()).await?;
         let status = response.json::<LineStatusFeed>()?.into_network_status()?;
 
         let affected = status
