@@ -115,6 +115,31 @@ impl Line {
     ///
     /// Empty when the station ends that direction: Po Lam for up trains, but
     /// also LOHAS Park, whose branch never reaches Po Lam.
+    ///
+    /// # Examples
+    ///
+    /// The Tseung Kwan O Line forks after Tseung Kwan O station, so up trains
+    /// from before the fork reach both termini, and those past it only one.
+    ///
+    /// ```
+    /// use dut_core::domain::network::{Direction, Line, StationCode};
+    ///
+    /// let tiu_keng_leng: StationCode = "TIK".parse()?;
+    /// let hang_hau: StationCode = "HAH".parse()?;
+    /// let lohas_park: StationCode = "LHP".parse()?;
+    /// let towards = |station, direction| -> Vec<&'static str> {
+    ///     Line::TseungKwanO
+    ///         .towards(station, direction)
+    ///         .map(StationCode::as_str)
+    ///         .collect()
+    /// };
+    ///
+    /// assert_eq!(towards(tiu_keng_leng, Direction::Up), ["POA", "LHP"]);
+    /// assert_eq!(towards(hang_hau, Direction::Up), ["POA"]);
+    /// assert!(towards(lohas_park, Direction::Up).is_empty());
+    /// assert_eq!(towards(lohas_park, Direction::Down), ["NOP"]);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn towards(
         self,
         station: StationCode,

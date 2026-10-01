@@ -6,6 +6,20 @@ use thiserror::Error;
 ///
 /// The MTR publishes fares in dollars with at most two decimal places, so
 /// whole cents hold every fare exactly, and clients never round a float.
+///
+/// # Examples
+///
+/// ```
+/// use dut_core::domain::reference::Fare;
+///
+/// let fare: Fare = "4.9".parse()?;
+/// assert_eq!(fare.cents(), 490);
+/// assert_eq!(fare.to_string(), "HK$4.90");
+///
+/// // No fare is a fraction of a cent.
+/// assert!("4.905".parse::<Fare>().is_err());
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Fare(u32);
 

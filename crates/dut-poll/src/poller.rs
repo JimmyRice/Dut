@@ -27,6 +27,55 @@ use crate::{
 /// burst of catch-up polls against a struggling upstream.
 ///
 /// Must be called within a Tokio runtime.
+///
+/// # Examples
+///
+/// Poll weather warnings every minute and read the latest value. The
+/// schedules the service runs on are constants in `src/bootstrap/config.rs`.
+///
+/// ```
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// use std::time::Duration;
+///
+/// use dut_core::{
+///     application::{feed::Feed, source::SourceUnavailable},
+///     domain::{source_health::SourceId, weather::WeatherWarnings},
+/// };
+/// use dut_poll::Schedule;
+///
+/// /// The Observatory with no warning in force.
+/// struct ClearSkies;
+///
+/// impl Feed for ClearSkies {
+///     type Item = WeatherWarnings;
+///
+///     const SOURCE: SourceId = SourceId::HkoWarnings;
+///
+///     async fn fetch(&self) -> Result<WeatherWarnings, SourceUnavailable> {
+///         Ok(WeatherWarnings { warnings: Vec::new() })
+///     }
+/// }
+///
+/// let schedule = Schedule {
+///     interval: Duration::from_secs(60),
+///     first_poll_after: Duration::ZERO,
+///     retry_after: Duration::from_secs(60),
+///     // The interval plus the request timeout.
+///     fresh_for: Duration::from_secs(70),
+///     stale_if_error: Duration::from_secs(15 * 60),
+///     blind_after: Duration::from_secs(5 * 60),
+/// };
+///
+/// let warnings = dut_poll::spawn(ClearSkies, schedule);
+///
+/// // Waits for the first poll, which has only just started.
+/// let snapshot = warnings.snapshot().await?;
+/// assert!(snapshot.value().warnings.is_empty());
+/// assert!(!snapshot.freshness().is_stale());
+/// # Ok(())
+/// # }
+/// ```
 pub fn spawn<F: Feed>(feed: F, schedule: Schedule) -> FeedHandle<F::Item> {
     let (state, reader) = watch::channel(FeedState::new());
     let span = info_span!("poll", source = %F::SOURCE);
