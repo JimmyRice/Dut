@@ -12,6 +12,12 @@ module it lives in.
 When a public trait, handle, or entry point described here changes, update
 this file in the same change.
 
+The snippets in this file are not compiled. The doc comments on
+`Subscriber`, `Feed`, `dut_poll::spawn`, `Line::towards`, `StationCode`,
+`Fare`, and `HONG_KONG` carry examples that `cargo test` compiles and runs,
+and `cargo doc --open` shows. When the two disagree, the doc comment is
+right and this file needs updating.
+
 ## Where to start
 
 | I want to… | Use | Crate |

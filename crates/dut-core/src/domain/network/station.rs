@@ -9,6 +9,24 @@ use crate::domain::{localized::Localized, three_letters::ThreeLetters};
 /// The code is stored inline as uppercase ASCII, so it is `Copy`, cheap to
 /// hash, and safe to use as a cache key. A syntactically valid code is not
 /// necessarily a known station; use [`Station::find`] for that.
+///
+/// # Examples
+///
+/// ```
+/// use dut_core::domain::network::{Station, StationCode};
+///
+/// let code: StationCode = "tko".parse()?;
+/// assert_eq!(code.as_str(), "TKO");
+/// let station = Station::find(code).map(|station| station.name.en);
+/// assert_eq!(station, Some("Tseung Kwan O"));
+///
+/// // Three letters make a valid code, but not necessarily a station.
+/// let unknown: StationCode = "XYZ".parse()?;
+/// assert_eq!(Station::find(unknown), None);
+///
+/// assert!("TK0".parse::<StationCode>().is_err());
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct StationCode(ThreeLetters);
 
@@ -17,6 +35,22 @@ impl StationCode {
     ///
     /// Only call this in `const` items: an invalid literal then fails the
     /// build instead of panicking at runtime.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dut_core::domain::network::StationCode;
+    ///
+    /// const TSEUNG_KWAN_O: StationCode = StationCode::from_static("TKO");
+    /// ```
+    ///
+    /// The same item with a mistyped literal does not compile:
+    ///
+    /// ```compile_fail
+    /// use dut_core::domain::network::StationCode;
+    ///
+    /// const TSEUNG_KWAN_O: StationCode = StationCode::from_static("TK0");
+    /// ```
     pub const fn from_static(code: &str) -> Self {
         match ThreeLetters::parse(code.as_bytes()) {
             Some(letters) => Self(letters),
