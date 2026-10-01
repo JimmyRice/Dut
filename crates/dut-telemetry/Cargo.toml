@@ -1,6 +1,6 @@
 [package]
 name = "dut-telemetry"
-description = "Console logging and the log-field conventions every crate follows."
+description = "Log output and the log-field conventions every crate follows."
 version.workspace = true
 edition.workspace = true
 publish.workspace = true

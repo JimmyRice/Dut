@@ -95,9 +95,21 @@ curl http://127.0.0.1:3000/api/lines/TKL/stations/TKO/next-trains
 
 ## 配置
 
-| 环境变量 | 默认值 | 作用 |
-|---|---|---|
-| `DUT_BIND_ADDRESS` | `127.0.0.1:3000` | 监听的 IP 和端口，例如 `0.0.0.0:3000` 或 `[::]:3000`。只能写 IP，不能写主机名 |
+启动参数可以写在命令行上，也可以用对应的环境变量设置，两者都有时以命令行为准。容器里一般用环境变量，在终端里手动运行时用命令行更方便。
+
+| 命令行参数 | 环境变量 | 默认值 | 作用 |
+|---|---|---|---|
+| `--bind-address <ADDRESS>` | `DUT_BIND_ADDRESS` | `127.0.0.1:3000` | 监听的 IP 和端口，例如 `0.0.0.0:3000` 或 `[::]:3000`。只能写 IP，不能写主机名 |
+| `--log-level <LEVEL>` | `RUST_LOG` | `info,dut=debug,tower_http=debug` | 输出哪些日志，见[日志](#日志) |
+| `--log-file <PATH>` | `DUT_LOG_FILE` | 不写文件 | 把日志额外追加到这个文件，见[日志](#日志) |
+
+`dut --help` 列出所有参数，`dut --version` 输出版本号。用 `cargo run` 时，参数写在 `--` 后面：
+
+```bash
+cargo run -- --log-level info
+```
+
+参数值不合法或为空时（例如 `DUT_BIND_ADDRESS=localhost:3000`），服务不会启动，而是输出原因并以退出码 2 退出。
 
 港铁接口地址、超时和缓存策略都是 [src/bootstrap/config.rs](src/bootstrap/config.rs) 里的默认值，修改后重新编译即可。
 
@@ -117,7 +129,7 @@ docker build -t dut .
 docker run --rm -p 3000:3000 dut
 ```
 
-镜像里已经设置了 `DUT_BIND_ADDRESS=0.0.0.0:3000`。编译阶段始终在本机架构上运行，用 [xx](https://github.com/tonistiigi/xx) 交叉编译，所以在 Apple Silicon 上构建 amd64 镜像也不需要模拟 CPU：
+镜像里已经设置了 `DUT_BIND_ADDRESS=0.0.0.0:3000`。其他参数可以用 `-e` 设置环境变量，也可以直接写在镜像名后面，例如 `docker run --rm -p 3000:3000 dut --log-level info`。编译阶段始终在本机架构上运行，用 [xx](https://github.com/tonistiigi/xx) 交叉编译，所以在 Apple Silicon 上构建 amd64 镜像也不需要模拟 CPU：
 
 ```bash
 docker buildx build --platform linux/amd64,linux/arm64 -t dut .
@@ -173,7 +185,8 @@ gh attestation verify dut-x86_64-unknown-linux-musl.tar.gz -R JimmyRice/Dut
 
 ## 日志
 
-- **日志级别**：用 `RUST_LOG` 设置，默认值是 `info,dut=debug,tower_http=debug`，会输出缓存命中等调试信息。target 按前缀匹配，所以 `dut` 同时覆盖 `dut_upstream`、`dut_api` 等所有 crate。想安静一些可以用 `RUST_LOG=info cargo run`。
+- **日志级别**：用 `--log-level` 或 `RUST_LOG` 设置，默认值是 `info,dut=debug,tower_http=debug`，会输出缓存命中等调试信息。可以只写一个级别（`error`、`warn`、`info`、`debug`、`trace`，或用 `off` 关闭日志），也可以用 `RUST_LOG` 的语法给不同 crate 设置不同级别。target 按前缀匹配，所以 `dut` 同时覆盖 `dut_upstream`、`dut_api` 等所有 crate。想安静一些可以用 `cargo run -- --log-level info`。和 `RUST_LOG` 的一般用法不同，拼错的级别（例如 `debgu`）和空值会让服务拒绝启动，而不是悄悄地不再输出日志。启动后的第一条日志 `logging started` 会记录实际生效的过滤规则和日志文件路径。
+- **写入文件**：`--log-file /var/log/dut.log` 会在终端或标准输出之外，把每条日志再以一行纯文本追加到这个文件，格式和输出到管道时相同。文件不存在时会自动创建，但所在目录必须已经存在，否则服务不会启动。服务本身不轮转日志文件；用 logrotate 轮转时要配置 `copytruncate`，否则服务会一直写入被改名的旧文件，直到重启。容器里一般不需要这个参数，直接收集标准输出即可。
 - **在终端里运行时**：同一个请求的所有日志合成一块，开头是一行摘要，并带颜色。设置 `NO_COLOR=1` 可以关闭颜色。
 - **输出到文件或管道时**：每条日志一行，不带颜色，方便 `grep` 和日志收集工具处理。
 - **启动时的连通性检查**：开始监听后，服务会在后台向每个上游各发一个请求，检查能否连上并拿到 JSON（开放数据是 CSV），每个上游输出一行 `upstream reachable` 或 `upstream unreachable`（带耗时和错误原因），最后输出一行汇总：`every upstream is reachable` 或 `some upstreams are unreachable`。检查不会阻塞请求，也不会因为上游不通而退出，上游恢复后缓存会自动重试。
@@ -200,7 +213,7 @@ cargo test
 测试完全离线运行：路由测试在 `tests/api/`，用 `wiremock` 模拟港铁和天文台上游，上游样例数据在 `tests/fixtures/`，来自真实响应。每个路由测试都会启动完整的服务，约占十几个文件描述符，测试框架按 CPU 核数并行运行；macOS 终端默认的上限只有 256，所以路由测试启动时会自行把上限提高到系统允许的最大值。
 
 ```text
-src/                 dut 程序本身：配置、组装依赖、启动服务
+src/                 dut 程序本身：命令行参数、配置、组装依赖、启动服务
 crates/
   dut-core/          线路、车站、列车到站等业务类型和用例，不依赖任何框架
   dut-telemetry/     日志输出

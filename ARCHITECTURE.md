@@ -19,6 +19,9 @@ justify it.
 - **Memory only.** Caches, polled values, open data, and the monitor's
   baselines live in the process. A new process rebuilds them from upstreams
   at startup. Nothing is written to local disk and no volume is mounted.
+  The one exception is a log file, which an operator may ask for with
+  `--log-file`: it is output that the process never reads back, so a
+  replacement process loses nothing without it.
 - **Disposable instances.** Any instance can be stopped, replaced, or
   duplicated without a migration or a handover. The cost is accepted: a
   process that starts while an upstream is down serves `502` for that
@@ -54,7 +57,7 @@ layer.
 | `dut-poll` | background | Polls `Feed`s on a schedule, keeps their latest value and source health | core, telemetry |
 | `dut-monitor` | background | Watches polled feeds and publishes each change as a `MonitorEvent` | core, poll |
 | `dut-api` | api | Axum routes, DTOs, middleware, `ApiError`, `AppState` | core, telemetry |
-| `dut` (root package) | bootstrap | Configuration, wiring, process lifecycle | all |
+| `dut` (root package) | bootstrap | Command line, configuration, wiring, process lifecycle | all |
 
 `dut-poll` and `dut-monitor` are split at a deployment boundary. Every API
 instance polls, because the line status endpoint serves the polled value;
@@ -76,9 +79,9 @@ events.
   responses. `AppState` holds the services shared by handlers. Its data
   sources are type parameters, so `dut-api` never depends on an adapter.
 - `bootstrap`: The composition root and process lifecycle, in the root
-  package's `src/`. It holds the configuration and startup errors, creates
-  infrastructure and services, assembles `AppState`, builds the application,
-  and serves it.
+  package's `src/`. It reads the command line, holds the configuration and
+  startup errors, creates infrastructure and services, assembles `AppState`,
+  builds the application, and serves it.
 - `background`: Work that runs without a request. `dut-poll` knows nothing
   of what a feed contains; `dut-monitor` interprets changes through the diffs
   that `dut-core` defines on its domain types.
@@ -113,13 +116,14 @@ dut-poll poller, one task per feed, on its own schedule
 
 ```text
 Cargo.toml        workspace manifest, and the dut binary package
-src/              bootstrap/{app (wiring), config, error (StartupError), server}, lib.rs, main.rs
+src/              bootstrap/{app (wiring), command_line (CommandLine), config,
+                             error (StartupError), server}, lib.rs, main.rs
 crates/
   dut-core/       domain/{network, next_train, line_status, weather, source_health,
                          event, localized, time, reference},
                   application/{source, feed, subscriber, next_train, line_status,
                                reference_data}
-  dut-telemetry/  console, fields (log-field conventions),
+  dut-telemetry/  output (init, LogConfig), filter (LogFilter), fields (log-field conventions),
                   request_blocks (terminal view, one block per request)
   dut-http/       client (OutboundHttpClient), freshness
   dut-upstream/   cache, connectivity, mtr/{next_train, line_status, open_data}, hko/warnings
@@ -144,7 +148,8 @@ archives and the container image are built with `[profile.dist]`, whose fat
 LTO optimises every crate and dependency as one program, so splitting the
 workspace costs no cross-crate inlining in what ships. The same profile
 aborts on panic and optimises the outbound HTTPS client for size, since it
-runs once per poll rather than once per request.
+runs once per poll rather than once per request, and the command line
+parser, which runs once at startup.
 
 ## Visibility
 
@@ -156,7 +161,44 @@ internal says `pub(crate)`. `dut-core` exports its `domain` and `application`
 modules whole, since every other crate builds on them.
 
 The `dut` library exports only what `main` and the route tests use:
-`AppConfig`, `build_app`, `run`, and `StartupError`.
+`AppConfig`, `build_app`, `CommandLine`, `run`, and `StartupError`.
+
+## Configuration
+
+What the service serves, such as upstream endpoints, timeouts, cache
+policies, and poll schedules, is compiled into `AppConfig`'s defaults and
+changes with a release. What may differ between two runs of the same build
+is an option, which `CommandLine` in `src/bootstrap/command_line.rs` reads
+with clap: where the process listens, how it logs, and, as features need
+them, credentials and switches.
+
+- **Flag and variable.** Every option is a long flag with an environment
+  variable behind it, and the flag wins: containers configure the process
+  through its environment, people at a terminal through flags. `RUST_LOG`
+  keeps its conventional name; every other variable starts with `DUT_`.
+  Deployments depend on these names, so a test pins them.
+- **Groups.** Options are grouped by concern, one `clap::Args` struct per
+  group under its own `--help` heading. A new concern adds a struct and
+  flattens it into `CommandLine`. The doc comments on its fields are the
+  `--help` text. Crates never read the command line or the environment;
+  bootstrap hands them plain values such as `dut_telemetry::LogConfig`.
+- **Parsed at the boundary.** Each option has a type that validates it, such
+  as `SocketAddr` or `LogFilter`, so a malformed or empty value stops the
+  process before anything starts, with a usage error and exit status 2.
+  Rules between options, such as two that must be set together, are
+  declared on the arguments with clap's `requires` and `conflicts_with`.
+- **Secrets** are passed through their environment variable rather than
+  their flag, since other users of a machine can read a process's
+  arguments, and their option sets `hide_env_values` so that `--help` does
+  not print them.
+- **Tests** parse argument lists with every option's environment variable
+  removed, so the shell running them cannot change their outcome, and no
+  test calls `std::env::set_var`, which is `unsafe` in edition 2024 and
+  races between tests.
+- **Cost.** Parsing happens once, before logging starts, and nothing on a
+  request's path reads options. clap is built without coloured help and
+  optimised for size in the `dist` profile, where it adds about 180 KB,
+  3.5%, to the binary.
 
 ## Caching and freshness
 
@@ -396,11 +438,12 @@ app. This section records the agreed direction; the crate does not exist yet.
 
 ### Push configuration
 
-Bootstrap reads `DUT_ONESIGNAL_APP_ID` and `DUT_ONESIGNAL_API_KEY` and passes
-an `Option<OneSignalConfig>` to `dut-push`; the crate never reads the
-environment.
+`CommandLine` reads `--onesignal-app-id` and `--onesignal-api-key`, set in
+production through `DUT_ONESIGNAL_APP_ID` and `DUT_ONESIGNAL_API_KEY` (see
+"Configuration"), and bootstrap passes an `Option<OneSignalConfig>` to
+`dut-push`; the crate never reads the command line or the environment.
 
-| Variables | Outcome |
+| Options | Outcome |
 | --- | --- |
 | Neither set | Push is disabled and this is logged at `info`. The monitor still runs. |
 | Both set and non-empty | Push is enabled. |
@@ -408,11 +451,11 @@ environment.
 
 - A half-set configuration usually means a mistyped name or a missing secret
   mount. Failing at startup surfaces it before an incident does.
-- `AppConfig` is logged at startup, so the API key is held in a type whose
-  `Debug` output is redacted, and its header value is marked sensitive.
-- Configuration parsing takes a lookup function so that tests supply
-  variables from a map. `std::env::set_var` is `unsafe` in edition 2024 and
-  races between tests.
+- The two options require each other, so clap enforces the table, and an
+  empty value fails to parse like any other option's.
+- `AppConfig` is logged at startup and `CommandLine` derives `Debug`, so the
+  API key is held in a type whose `Debug` output is redacted, and its header
+  value is marked sensitive.
 
 ### Deployment
 

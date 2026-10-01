@@ -29,6 +29,7 @@ right and this file needs updating.
 | Read a new upstream document in the background | Implement [`Feed`](#feed), start it with `dut_poll::spawn` | `dut-core`, `dut-upstream`, `dut-poll` |
 | Call an upstream over HTTP | [`OutboundHttpClient::fetch`](#outbound-http) | `dut-http` |
 | Work with lines, stations, directions, bilingual names | [Domain vocabulary](#domain-vocabulary) | `dut-core` |
+| Let an operator set something at startup, such as a credential | Add an option to a group in `CommandLine`, see ARCHITECTURE.md "Configuration" | `dut` (bootstrap) |
 
 Everything is constructed once, in `src/bootstrap/app.rs`, and nowhere else.
 Business logic receives what it needs from there.
