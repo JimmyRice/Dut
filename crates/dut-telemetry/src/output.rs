@@ -35,17 +35,18 @@ pub struct LogConfig {
     pub file: Option<PathBuf>,
 }
 
-/// Why logging could not start.
+/// Why logging could not start. A message leaves out its cause, which
+/// `source` returns, so a caller printing the whole chain shows it once.
 #[derive(Debug, Error)]
 pub enum InitError {
-    #[error("cannot open the log file {}: {source}", path.display())]
+    #[error("cannot open the log file {}", path.display())]
     OpenFile {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
 
-    #[error("failed to install the log subscriber: {0}")]
+    #[error("failed to install the log subscriber")]
     Install(#[source] TryInitError),
 }
 

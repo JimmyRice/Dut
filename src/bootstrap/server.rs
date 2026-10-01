@@ -6,16 +6,24 @@ use tracing::{info, warn};
 use dut_telemetry::millis;
 
 use super::{
-    AppConfig, StartupError,
+    AppConfig, CommandLine, StartupError,
     app::{App, assemble},
 };
+
+/// Starts logging as the command line asks, then serves until the process
+/// is asked to stop. Logging starts first, so that it records every step
+/// of the start that follows.
+pub async fn run(command_line: CommandLine) -> Result<(), StartupError> {
+    dut_telemetry::init(&command_line.log_config())?;
+    serve(command_line.app_config()).await
+}
 
 /// Serves the application on the configured address until the process is
 /// asked to stop, then lets in-flight requests finish before returning.
 ///
 /// Once the socket is bound, every upstream is probed once in the background
 /// and the outcome is logged; requests are served meanwhile.
-pub async fn run(config: AppConfig) -> Result<(), StartupError> {
+async fn serve(config: AppConfig) -> Result<(), StartupError> {
     let mtr = config.mtr();
     let hko = config.hko();
     let polling = config.polling();
