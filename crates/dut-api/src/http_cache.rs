@@ -94,19 +94,20 @@ impl EntityTag {
 }
 
 /// Answers `304 Not Modified` when the client already holds `tag`, and
-/// builds the body only otherwise. Both answers carry the tag and
-/// `cache_control`, so a revalidated copy is reused for as long again.
-pub(super) fn conditional<B: IntoResponse>(
+/// awaits the body only otherwise: a future does nothing until awaited.
+/// Both answers carry the tag and `cache_control`, so a revalidated copy is
+/// reused for as long again.
+pub(super) async fn conditional<B: IntoResponse>(
     request: &HeaderMap,
     tag: &EntityTag,
     cache_control: HeaderValue,
-    body: impl FnOnce() -> B,
+    body: impl Future<Output = B>,
 ) -> Response {
     let headers = [(CACHE_CONTROL, cache_control), (ETAG, tag.header_value())];
     if tag.matches(request) {
         (StatusCode::NOT_MODIFIED, headers).into_response()
     } else {
-        (headers, body()).into_response()
+        (headers, body.await).into_response()
     }
 }
 
@@ -170,14 +171,19 @@ mod tests {
         assert!(!tag().matches(&HeaderMap::new()));
     }
 
-    #[test]
-    fn answers_not_modified_without_building_the_body() {
+    async fn unbuilt() -> Json<()> {
+        panic!("the body must not be built")
+    }
+
+    #[tokio::test]
+    async fn answers_not_modified_without_building_the_body() {
         let response = conditional(
             &if_none_match("W/\"af63dc4c8601ec8c\""),
             &tag(),
             HeaderValue::from_static("public, max-age=60"),
-            || -> Json<()> { panic!("the body must not be built") },
-        );
+            unbuilt(),
+        )
+        .await;
 
         assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
         assert_eq!(response.headers()[CACHE_CONTROL], "public, max-age=60");

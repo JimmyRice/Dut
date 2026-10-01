@@ -5,7 +5,9 @@
 //! result to a response. The services' data sources are type parameters, so
 //! this crate never depends on an adapter.
 
+mod content_coding;
 mod dto;
+mod encoded_body;
 mod error;
 mod http_cache;
 mod middleware;

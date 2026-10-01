@@ -23,6 +23,7 @@ dut-upstream = { path = "crates/dut-upstream" }
 axum = "0.8.9"
 bytes = "1.12.1"
 csv = "1.4.0"
+flate2 = "1.1.9"
 futures = "0.3.34"
 jiff = "0.2.37"
 mimalloc = "0.1.52"
@@ -105,6 +106,7 @@ tracing-subscriber.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+flate2.workspace = true
 jiff.workspace = true
 rlimit.workspace = true
 serde_json.workspace = true

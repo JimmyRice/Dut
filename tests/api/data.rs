@@ -1,4 +1,7 @@
+use std::io::Read;
+
 use axum::http::{Method, StatusCode, header};
+use flate2::read::GzDecoder;
 use serde_json::{Value, json};
 use wiremock::MockServer;
 
@@ -326,8 +329,30 @@ async fn a_matching_etag_is_not_modified() {
 #[tokio::test]
 async fn responses_are_gzipped_for_clients_that_accept_it() {
     let app = app().await;
-    let plain = app.send(Method::GET, "/api/data/fares").await;
+    let paths = DATASETS
+        .map(|name| format!("/api/data/{name}"))
+        .into_iter()
+        .chain(OPEN_DATA_FILES.map(|file| format!("/api/data/sources/{file}")));
 
+    for path in paths {
+        let plain = app.send(Method::GET, &path).await;
+        let gzipped = app
+            .send_with_headers(Method::GET, &path, &[(header::ACCEPT_ENCODING, "gzip")])
+            .await;
+
+        assert_eq!(gzipped.status, StatusCode::OK, "{path}");
+        assert_eq!(gzipped.header(header::CONTENT_ENCODING), "gzip", "{path}");
+        assert_eq!(
+            gzipped.header(header::CONTENT_TYPE),
+            plain.header(header::CONTENT_TYPE),
+            "{path}"
+        );
+        assert_eq!(gzipped.header(header::VARY), "accept-encoding", "{path}");
+        assert_eq!(plain.header(header::VARY), "accept-encoding", "{path}");
+        assert_eq!(gunzip(&gzipped.body), plain.body, "{path}");
+    }
+
+    let plain = app.send(Method::GET, "/api/data/fares").await;
     let gzipped = app
         .send_with_headers(
             Method::GET,
@@ -335,10 +360,55 @@ async fn responses_are_gzipped_for_clients_that_accept_it() {
             &[(header::ACCEPT_ENCODING, "gzip")],
         )
         .await;
-
-    assert_eq!(gzipped.status, StatusCode::OK);
-    assert_eq!(gzipped.header(header::CONTENT_ENCODING), "gzip");
     assert!(gzipped.body.len() < plain.body.len() / 4);
+}
+
+/// Open data bodies are compressed ahead of time, bypassing the compression
+/// layer that encodes every other response, so they must choose a coding as
+/// it does.
+#[tokio::test]
+async fn open_data_negotiates_compression_as_other_routes_do() {
+    let app = app().await;
+
+    for accept in [
+        "gzip",
+        "x-gzip",
+        "identity",
+        "br",
+        "gzip;q=0",
+        "gzip;q=0.5, identity",
+        "GZIP;Q=0.9, identity;q=0.8",
+        "identity;q=0, gzip",
+        "gzip;q=1.5",
+        "*",
+        "*;q=0, identity",
+        "*;q=0",
+        "identity;q=0",
+    ] {
+        let headers = [(header::ACCEPT_ENCODING, accept)];
+        let expected = app
+            .send_with_headers(Method::GET, "/api/lines", &headers)
+            .await;
+
+        for path in ["/api/data/fares", "/api/data/sources/mtr_lines_fares.csv"] {
+            let response = app.send_with_headers(Method::GET, path, &headers).await;
+
+            assert_eq!(response.status, expected.status, "{path} for {accept}");
+            assert_eq!(
+                response.header(header::CONTENT_ENCODING),
+                expected.header(header::CONTENT_ENCODING),
+                "{path} for {accept}"
+            );
+        }
+    }
+}
+
+fn gunzip(body: &[u8]) -> Vec<u8> {
+    let mut plain = Vec::new();
+    GzDecoder::new(body)
+        .read_to_end(&mut plain)
+        .expect("the body should be gzip");
+    plain
 }
 
 #[tokio::test]
