@@ -224,6 +224,14 @@ keeps a local copy. The design follows from that:
   `ETag` (datasets also include the service version, since a release may
   change the JSON), answer `If-None-Match` with `304`, and list it in the
   `/api/data` index so the app checks everything in one request.
+- **Encoded once per fetch.** The first request for a dataset or file after
+  a fetch serializes and gzips it, at the highest level and on the blocking
+  pool, and every later request shares those bytes, so a full download of
+  the fare table costs about as much CPU as a `304`. A dataset's body also
+  carries `fetched_at` and `stale`, so its encodings are keyed by those
+  rather than by revision. These bodies bypass `CompressionLayer`, so
+  `ContentCoding::negotiate` mirrors the layer's reading of
+  `Accept-Encoding`, and a route test holds the two to the same answers.
 - **Memory only.** The files and datasets are held by the poller and read
   again from the portal whenever a process starts, per "Stateless first".
   A process that starts during a portal outage answers `502` until the

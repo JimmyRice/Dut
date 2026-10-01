@@ -695,6 +695,7 @@ date: Mon, 28 Sep 2026 16:44:12 GMT
 - **一致性。** 7 个文件在同一次拉取里读取，任何一个下载或清洗失败，这次拉取就整体作废，继续使用上一份完整数据。所以同一时刻各接口返回的数据互相对得上（例如车费里的车站代码一定能在车站资料里找到），原始 CSV 与清洗结果也出自同一份文件。
 - **`Cache-Control`。** `max-age` 是距下一次拉取的剩余秒数，最长约一天（86400 秒加 30 秒请求超时），并随时间递减。拉取一直失败时，旧数据以 `stale: true`、`Cache-Control: no-cache` 返回，最长顶替 30 天。
 - **`ETag`。** 每个响应都带弱 ETag，例如 `W/"0.3.0-5987f5c9680ce780"`。清洗后的数据集，ETag 由服务版本号和数据内容决定：港铁文件改了、但清洗结果没变时 ETag 不变；服务升级改了 JSON 结构时 ETag 会变。原始 CSV 的 ETag 只由文件字节决定。
+- **压缩。** 清洗后的数据集和原始 CSV 在每次拉取后只编码一次：第一个请求触发序列化和 gzip（最高压缩级别），之后的请求共享同一份结果，所以下载大数据集几乎不增加服务端负担，响应也带 `Content-Length`。每次拉取后的第一个请求会多等编码的十几毫秒。是否压缩的判断与其他接口相同；响应都带 `Vary: Accept-Encoding`，供中间的缓存区分压缩和未压缩的版本。
 - **启动时。** 服务刚启动、第一次拉取还没完成时，请求会等它完成再返回。
 - **错误。** 从未成功拉取过，或最近一次成功拉取已超过新鲜期加 30 天，返回 `502 upstream_unavailable`。
 
@@ -1018,7 +1019,7 @@ GET /api/data/fares
 curl --compressed http://127.0.0.1:3000/api/data/fares
 ```
 
-响应约 1.7 MB，gzip 后约 75 KB，请求时请带 `Accept-Encoding: gzip`（curl 用 `--compressed`，`URLSession` 默认就会带）。
+响应约 1.7 MB，gzip 后约 71 KB，请求时请带 `Accept-Encoding: gzip`（curl 用 `--compressed`，`URLSession` 默认就会带）。
 
 ### 响应示例
 
@@ -1262,7 +1263,7 @@ GET /api/data/light-rail-fares
 curl --compressed http://127.0.0.1:3000/api/data/light-rail-fares
 ```
 
-响应约 810 KB，gzip 后约 18 KB。
+响应约 810 KB，gzip 后约 17 KB。
 
 ### 响应示例
 
@@ -1461,6 +1462,7 @@ curl --compressed http://127.0.0.1:3000/api/data/accessibility
 
 | 日期 | 变更 |
 |---|---|
+| 2026-10-01 | 开放数据的数据集（`GET /api/data/stations` 等 6 个）和原始文件（`GET /api/data/sources/{file}`）改为每次拉取只编码一次、所有请求共享，gzip 改用最高压缩级别：`/api/data/fares` 从约 75 KB 降到约 71 KB。响应改带 `Content-Length` 和 `Vary: Accept-Encoding`。解压后的内容、`ETag` 和 `Cache-Control` 不变。 |
 | 2026-09-29 | 新增港铁开放数据接口：`GET /api/data`（索引）、`GET /api/data/sources/{file}`（原样的 CSV 文件）、`GET /api/data/stations`、`GET /api/data/fares`、`GET /api/data/airport-express-fares`、`GET /api/data/light-rail`、`GET /api/data/light-rail-fares`、`GET /api/data/accessibility`。数据每天拉取一次，响应带 `ETag`，支持 `If-None-Match` 返回 `304`；车费以港仙整数表示。所有响应在客户端接受时以 gzip 压缩。新增错误码 `404 unknown_source`。 |
 | 2026-09-29 | 新增 `GET /api/health` 健康检查：返回 `200`、空响应体和 `Cache-Control: no-store`，不访问上游，不记入请求日志。 |
 | 2026-09-28 | `GET /api/lines/status` 改为读取后台每 30 秒一次的轮询结果。`max-age` 最多为 33，并随距下一次轮询的时间递减；上游正常时不再出现 `stale: true`。响应字段不变。 |
