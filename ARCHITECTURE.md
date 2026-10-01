@@ -142,7 +142,9 @@ Dependency versions are pinned once in `[workspace.dependencies]`, and every
 crate inherits its version, edition, and lints from the workspace. Release
 archives and the container image are built with `[profile.dist]`, whose fat
 LTO optimises every crate and dependency as one program, so splitting the
-workspace costs no cross-crate inlining in what ships.
+workspace costs no cross-crate inlining in what ships. The same profile
+aborts on panic and optimises the outbound HTTPS client for size, since it
+runs once per poll rather than once per request.
 
 ## Visibility
 

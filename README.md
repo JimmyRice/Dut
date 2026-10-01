@@ -161,7 +161,7 @@ Linux 版本是完全静态链接的 musl 程序，不依赖 glibc，在正常�
 
 Windows 版本静态链接了 C 运行时，不需要安装 Visual C++ Redistributable。
 
-发布的二进制文件和镜像都用 `Cargo.toml` 里的 `dist` profile 编译：开启 fat LTO，把所有 crate 和依赖当作一个整体优化，并去掉符号表。本地想得到和发布版一样的程序，可以运行 `cargo build --profile dist`，产物在 `target/dist/dut`，编译时间比 `--release` 长很多。
+发布的二进制文件和镜像都用 `Cargo.toml` 里的 `dist` profile 编译：开启 fat LTO，把所有 crate 和依赖当作一个整体优化，并去掉符号表。访问上游的 HTTPS 客户端每次轮询才运行一次，按体积优化；处理请求的代码仍按速度优化。程序 panic 时直接退出而不是只结束出错的任务，部署时应让容器或服务管理器自动重启它。本地想得到和发布版一样的程序，可以运行 `cargo build --profile dist`，产物在 `target/dist/dut`，编译时间比 `--release` 长很多。
 
 在 Actions 页面手动运行 Release 工作流，会编译同样的 6 个文件，但只保存为工作流的 artifact，不创建 release，适合在打 tag 前检查工作流的改动。
 
