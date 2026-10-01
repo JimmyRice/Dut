@@ -107,7 +107,7 @@ curl http://127.0.0.1:3000/api/lines/TKL/stations/TKO/next-trains
 
 ## Docker
 
-镜像分两阶段构建：先在 Alpine 里编译出完全静态链接的 musl 程序，再放进只有 CA 证书和非 root 用户的 [distroless static](https://github.com/GoogleContainerTools/distroless) 基础镜像。整个镜像约 10 MB，里面没有 shell。
+镜像分两阶段构建：先在 Alpine 里编译出完全静态链接的 musl 程序，再放进只有 CA 证书和非 root 用户的 [distroless static](https://github.com/GoogleContainerTools/distroless) 基础镜像。整个镜像不到 10 MB（arm64 约 8 MB，amd64 约 9 MB），里面没有 shell。
 
 ```bash
 docker build -t dut .
@@ -161,7 +161,7 @@ Linux 版本是完全静态链接的 musl 程序，不依赖 glibc，在正常�
 
 Windows 版本静态链接了 C 运行时，不需要安装 Visual C++ Redistributable。
 
-发布的二进制文件和镜像都用 `Cargo.toml` 里的 `dist` profile 编译：开启 fat LTO，把所有 crate 和依赖当作一个整体优化，并去掉符号表。访问上游的 HTTPS 客户端每次轮询才运行一次，按体积优化；处理请求的代码仍按速度优化。程序 panic 时直接退出而不是只结束出错的任务，部署时应让容器或服务管理器自动重启它。本地想得到和发布版一样的程序，可以运行 `cargo build --profile dist`，产物在 `target/dist/dut`，编译时间比 `--release` 长很多。
+发布的二进制文件和镜像都用 `Cargo.toml` 里的 `dist` profile 编译：开启 fat LTO，把所有 crate 和依赖当作一个整体优化，并去掉符号表。访问上游的 HTTPS 客户端每次轮询才运行一次，按体积优化；处理请求的代码仍按速度优化。程序 panic 时直接退出而不是只结束出错的任务，部署时应让容器或服务管理器自动重启它。panic 信息会先写进日志；在容器里程序是 1 号进程，内核会忽略发给它的 `SIGABRT`，所以退出码是 139 而不是 134，看起来像段错误。本地想得到和发布版一样的程序，可以运行 `cargo build --profile dist`，产物在 `target/dist/dut`，编译时间比 `--release` 长很多。
 
 在 Actions 页面手动运行 Release 工作流，会编译同样的 6 个文件，但只保存为工作流的 artifact，不创建 release，适合在打 tag 前检查工作流的改动。
 
