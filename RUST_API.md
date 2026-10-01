@@ -408,6 +408,10 @@ Every adapter offers `probe()`, the `Probe` the connectivity check sends.
   `error = &err as &dyn Error` so their source chain is printed.
 - Each layer has its own `thiserror` error type. No `unwrap`, `expect`, or
   `panic!` outside tests and `const` evaluation.
+- An error's message leaves out its cause, which `#[source]` returns, so a
+  logged error or a failed start prints each cause once. Write
+  `#[error("failed to bind the HTTP server to {address}")]`, not
+  `"…: {source}"`.
 - Implement `Clone` and `Debug` by hand on generic wrappers, so they do not
   demand the same of their type parameters.
 - Tests are offline and deterministic: paused Tokio time for timing, `wiremock`

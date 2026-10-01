@@ -4,4 +4,4 @@
 
 mod bootstrap;
 
-pub use bootstrap::{AppConfig, CommandLine, StartupError, build_app, run};
+pub use bootstrap::{AppConfig, CommandLine, StartupError, build_app, report, run};

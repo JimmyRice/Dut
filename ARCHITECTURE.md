@@ -81,7 +81,8 @@ events.
 - `bootstrap`: The composition root and process lifecycle, in the root
   package's `src/`. It reads the command line, holds the configuration and
   startup errors, creates infrastructure and services, assembles `AppState`,
-  builds the application, and serves it.
+  builds the application, serves it, and reports a failed start on standard
+  error with each cause once.
 - `background`: Work that runs without a request. `dut-poll` knows nothing
   of what a feed contains; `dut-monitor` interprets changes through the diffs
   that `dut-core` defines on its domain types.
@@ -117,7 +118,7 @@ dut-poll poller, one task per feed, on its own schedule
 ```text
 Cargo.toml        workspace manifest, and the dut binary package
 src/              bootstrap/{app (wiring), command_line (CommandLine), config,
-                             error (StartupError), server}, lib.rs, main.rs
+                             error (StartupError), report, server}, lib.rs, main.rs
 crates/
   dut-core/       domain/{network, next_train, line_status, weather, source_health,
                          event, localized, time, reference},
@@ -161,7 +162,7 @@ internal says `pub(crate)`. `dut-core` exports its `domain` and `application`
 modules whole, since every other crate builds on them.
 
 The `dut` library exports only what `main` and the route tests use:
-`AppConfig`, `build_app`, `CommandLine`, `run`, and `StartupError`.
+`AppConfig`, `build_app`, `CommandLine`, `report`, `run`, and `StartupError`.
 
 ## Configuration
 
