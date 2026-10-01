@@ -1,4 +1,3 @@
-use std::env;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
@@ -6,14 +5,12 @@ use dut_http::ProxyMode;
 use dut_poll::Schedule;
 use dut_upstream::CachePolicy;
 
-use super::StartupError;
+/// Localhost, so a process started by hand is not reachable from the network
+/// until its operator says so.
+pub(super) const DEFAULT_BIND_ADDRESS: SocketAddr =
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 3000);
 
-const DEFAULT_PORT: u16 = 3000;
 const DEFAULT_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// Overrides the listen address, e.g. `0.0.0.0:3000` in a container, where
-/// the default localhost address cannot be reached from outside.
-const BIND_ADDRESS_VAR: &str = "DUT_BIND_ADDRESS";
 
 const NEXT_TRAIN_ENDPOINT: &str = "https://rt.data.gov.hk/v1/transport/mtr/getSchedule.php";
 const LINE_STATUS_ENDPOINT: &str = "https://tnews.mtr.com.hk/alert/ryg_line_status.json";
@@ -100,7 +97,8 @@ const NEXT_TRAIN_CACHE: CachePolicy = CachePolicy {
 };
 
 /// Settings for one server process. The default listens on localhost and
-/// reads the live upstreams; tests swap the endpoints for a fake upstream.
+/// reads the live upstreams; the command line can change where it listens,
+/// and tests swap the endpoints for a fake upstream.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AppConfig {
     bind_address: SocketAddr,
@@ -141,18 +139,6 @@ pub(crate) struct PollingConfig {
 }
 
 impl AppConfig {
-    /// The defaults, adjusted by the process environment.
-    ///
-    /// Only the listen address can be set this way: it is the one setting
-    /// that depends on where the process runs rather than on what it serves.
-    pub fn from_env() -> Result<Self, StartupError> {
-        let config = Self::default();
-        match env::var_os(BIND_ADDRESS_VAR) {
-            Some(value) => config.with_bind_address(&value.to_string_lossy()),
-            None => Ok(config),
-        }
-    }
-
     /// Points the MTR adapters at other endpoints, e.g. a test double.
     #[must_use]
     pub fn with_mtr_endpoints(
@@ -190,15 +176,9 @@ impl AppConfig {
         self
     }
 
-    fn with_bind_address(mut self, value: &str) -> Result<Self, StartupError> {
-        self.bind_address = value
-            .parse()
-            .map_err(|source| StartupError::InvalidBindAddress {
-                variable: BIND_ADDRESS_VAR,
-                value: value.to_owned(),
-                source,
-            })?;
-        Ok(self)
+    pub(crate) const fn with_bind_address(mut self, address: SocketAddr) -> Self {
+        self.bind_address = address;
+        self
     }
 
     pub(crate) const fn bind_address(&self) -> SocketAddr {
@@ -229,7 +209,7 @@ impl AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            bind_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), DEFAULT_PORT),
+            bind_address: DEFAULT_BIND_ADDRESS,
             outbound_http_timeout: DEFAULT_HTTP_TIMEOUT,
             outbound_proxy: ProxyMode::System,
             mtr: MtrConfig {
@@ -256,8 +236,6 @@ impl Default for AppConfig {
 
 #[cfg(test)]
 mod tests {
-    use std::net::Ipv6Addr;
-
     use super::*;
 
     #[test]
@@ -266,7 +244,7 @@ mod tests {
 
         assert_eq!(
             config.bind_address(),
-            SocketAddr::from((Ipv4Addr::LOCALHOST, DEFAULT_PORT))
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 3000))
         );
     }
 
@@ -277,36 +255,5 @@ mod tests {
             AppConfig::default().without_proxy().outbound_proxy(),
             ProxyMode::Direct
         );
-    }
-
-    #[test]
-    fn accepts_ipv4_and_ipv6_bind_addresses() {
-        let ipv4 = AppConfig::default().with_bind_address("0.0.0.0:3000");
-        let ipv6 = AppConfig::default().with_bind_address("[::]:8080");
-
-        assert_eq!(
-            ipv4.map(|config| config.bind_address()).ok(),
-            Some(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 3000)))
-        );
-        assert_eq!(
-            ipv6.map(|config| config.bind_address()).ok(),
-            Some(SocketAddr::from((Ipv6Addr::UNSPECIFIED, 8080)))
-        );
-    }
-
-    #[test]
-    fn rejects_bind_addresses_without_an_ip_and_port() {
-        for value in ["3000", "localhost:3000", "0.0.0.0", ""] {
-            let result = AppConfig::default().with_bind_address(value);
-
-            assert!(
-                matches!(
-                    result,
-                    Err(StartupError::InvalidBindAddress { value: ref rejected, .. })
-                        if rejected == value
-                ),
-                "{value:?} should be rejected"
-            );
-        }
     }
 }
