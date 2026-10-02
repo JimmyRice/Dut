@@ -1,6 +1,9 @@
 //! Upcoming train arrivals for one station on one line.
 
+use std::{fmt, str::FromStr};
+
 use jiff::{SignedDuration, Timestamp};
+use thiserror::Error;
 
 use crate::domain::{
     localized::Localized,
@@ -30,7 +33,7 @@ pub struct TrainArrival {
     /// Position among the upcoming trains, starting at 1.
     pub sequence: u8,
     pub destination: StationCode,
-    pub platform: u8,
+    pub platforms: Platforms,
     /// Estimated arrival time, or departure time when `time_type` says so.
     pub arrival_at: Timestamp,
     /// Only published for the East Rail Line.
@@ -45,6 +48,97 @@ impl TrainArrival {
         as_of.duration_since(self.arrival_at) > DEPARTED_GRACE
     }
 }
+
+/// The platforms a train stands at, in the order the MTR lists them.
+///
+/// A train almost always stands at one platform. At Airport, each Airport
+/// Express track has a platform on either side and trains open their doors on
+/// both, so the MTR lists two, such as `1/3`. A train whose platform the MTR
+/// published illegibly has none, so that its time can still be shown.
+///
+/// # Examples
+///
+/// ```
+/// use dut_core::domain::next_train::Platforms;
+///
+/// let airport: Platforms = "1/3".parse()?;
+/// assert_eq!(airport.as_slice(), [1, 3]);
+/// assert_eq!("2".parse::<Platforms>()?, Platforms::one(2));
+///
+/// // No train stands at more than two platforms.
+/// assert!("1/2/3".parse::<Platforms>().is_err());
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+#[derive(Clone, Copy)]
+pub struct Platforms {
+    numbers: [u8; 2],
+    len: u8,
+}
+
+impl Platforms {
+    /// No known platform.
+    pub const NONE: Self = Self {
+        numbers: [0; 2],
+        len: 0,
+    };
+
+    /// A train at one platform, as nearly everywhere.
+    pub const fn one(number: u8) -> Self {
+        Self {
+            numbers: [number, 0],
+            len: 1,
+        }
+    }
+
+    /// A train between two platforms with its doors open on both sides, as
+    /// at Airport.
+    pub const fn pair(first: u8, second: u8) -> Self {
+        Self {
+            numbers: [first, second],
+            len: 2,
+        }
+    }
+
+    /// The platform numbers, empty when none is known.
+    pub fn as_slice(&self) -> &[u8] {
+        // `len` never exceeds the array, so this never falls back.
+        self.numbers
+            .get(..usize::from(self.len))
+            .unwrap_or_default()
+    }
+}
+
+/// Parses platforms as the MTR publishes them: one number, or two joined by
+/// a slash.
+impl FromStr for Platforms {
+    type Err = InvalidPlatforms;
+
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        let number = |text: &str| text.trim().parse().map_err(|_| InvalidPlatforms);
+        match input.split_once('/') {
+            None => Ok(Self::one(number(input)?)),
+            Some((first, second)) => Ok(Self::pair(number(first)?, number(second)?)),
+        }
+    }
+}
+
+impl PartialEq for Platforms {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
+impl Eq for Platforms {}
+
+impl fmt::Debug for Platforms {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "Platforms({:?})", self.as_slice())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+#[error("platforms must be one number, or two joined by a slash")]
+pub struct InvalidPlatforms;
 
 /// A special arrangement notice published instead of, or alongside, the
 /// regular schedule.
@@ -171,7 +265,7 @@ mod tests {
         TrainArrival {
             sequence,
             destination: "POA".parse().expect("test station code should be valid"),
-            platform: 1,
+            platforms: Platforms::one(1),
             arrival_at,
             time_type: None,
             via_racecourse: false,
@@ -187,6 +281,30 @@ mod tests {
         assert!(!train.has_departed(arrival_at));
         assert!(!train.has_departed(arrival_at + DEPARTED_GRACE));
         assert!(train.has_departed(arrival_at + DEPARTED_GRACE + SignedDuration::from_secs(1)));
+    }
+
+    #[test]
+    fn platforms_parse_one_number_or_two_joined_by_a_slash() {
+        let parse = |input: &str| input.parse::<Platforms>();
+
+        assert_eq!(parse("1"), Ok(Platforms::one(1)));
+        assert_eq!(parse("1/3"), Ok(Platforms::pair(1, 3)));
+        assert_eq!(parse(" 2 / 4 "), Ok(Platforms::pair(2, 4)));
+    }
+
+    #[test]
+    fn platforms_reject_anything_else() {
+        for input in ["", "A", "1/", "/3", "1/2/3", "1,3", "-1", "256"] {
+            assert_eq!(input.parse::<Platforms>(), Err(InvalidPlatforms), "{input}");
+        }
+    }
+
+    #[test]
+    fn platforms_compare_by_their_numbers() {
+        assert_eq!(Platforms::NONE.as_slice(), [0; 0]);
+        assert_ne!(Platforms::one(1), Platforms::pair(1, 3));
+        assert_ne!(Platforms::NONE, Platforms::one(0));
+        assert_eq!(format!("{:?}", Platforms::pair(1, 3)), "Platforms([1, 3])");
     }
 
     fn board(station: &str, trains: ByDirection<Vec<TrainArrival>>) -> NextTrainBoard {

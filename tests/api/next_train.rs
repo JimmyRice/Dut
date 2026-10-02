@@ -92,14 +92,14 @@ async fn line_board_returns_upcoming_trains_in_hong_kong_time() {
                     "trains": [
                         {
                             "destination": station("LHP", "LOHAS Park", "康城"),
-                            "platform": 1,
+                            "platforms": [1],
                             "arrival_at": first.api(),
                             "time_type": null,
                             "via_racecourse": false,
                         },
                         {
                             "destination": station("POA", "Po Lam", "寶琳"),
-                            "platform": 1,
+                            "platforms": [1],
                             "arrival_at": second.api(),
                             "time_type": null,
                             "via_racecourse": false,
@@ -112,7 +112,7 @@ async fn line_board_returns_upcoming_trains_in_hong_kong_time() {
                     "trains": [
                         {
                             "destination": station("NOP", "North Point", "北角"),
-                            "platform": 1,
+                            "platforms": [1],
                             "arrival_at": down.api(),
                             "time_type": null,
                             "via_racecourse": false,
@@ -158,12 +158,81 @@ async fn a_terminus_only_shows_the_direction_leaving_it() {
                 "trains": [
                     {
                         "destination": station("NOP", "North Point", "北角"),
-                        "platform": 1,
+                        "platforms": [1],
                         "arrival_at": departure.api(),
                         "time_type": null,
                         "via_racecourse": false,
                     },
                 ],
+            },
+        ])
+    );
+}
+
+#[tokio::test]
+async fn airport_trains_list_both_platforms_and_survive_an_unreadable_one() {
+    let app = TestApp::start().await;
+    let now = Moment::now();
+    let (first, second, down) = (
+        now.plus_seconds(60),
+        now.plus_seconds(660),
+        now.plus_seconds(240),
+    );
+    let mut body = schedule_body(
+        "AEL",
+        "AIR",
+        now,
+        &[
+            Train {
+                dest: "AWE",
+                at: first,
+            },
+            Train {
+                dest: "AWE",
+                at: second,
+            },
+        ],
+        &[Train {
+            dest: "HOK",
+            at: down,
+        }],
+    );
+    // As the MTR publishes Airport's platforms, plus one it garbled.
+    let board = &mut body["data"]["AEL-AIR"];
+    board["UP"][0]["plat"] = json!("1/3");
+    board["UP"][1]["plat"] = json!("");
+    board["DOWN"][0]["plat"] = json!("2/4");
+    mount_board(&app, "AEL", "AIR", upstream_ok(body)).await;
+
+    let response = app.get("/api/lines/AEL/stations/AIR/next-trains").await;
+
+    response.assert_json(StatusCode::OK);
+    let asia_world_expo = station("AWE", "AsiaWorld-Expo", "博覽館");
+    let hong_kong = station("HOK", "Hong Kong", "香港");
+    let train = |destination: &Value, at: Moment, platforms: Value| {
+        json!({
+            "destination": destination,
+            "platforms": platforms,
+            "arrival_at": at.api(),
+            "time_type": null,
+            "via_racecourse": false,
+        })
+    };
+    assert_eq!(
+        response.body["directions"],
+        json!([
+            {
+                "direction": "up",
+                "towards": [asia_world_expo],
+                "trains": [
+                    train(&asia_world_expo, first, json!([1, 3])),
+                    train(&asia_world_expo, second, json!([])),
+                ],
+            },
+            {
+                "direction": "down",
+                "towards": [hong_kong],
+                "trains": [train(&hong_kong, down, json!([2, 4]))],
             },
         ])
     );

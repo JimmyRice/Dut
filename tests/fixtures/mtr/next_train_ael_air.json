@@ -1,0 +1,89 @@
+{
+  "sys_time": "2026-10-02 16:11:15",
+  "curr_time": "2026-10-02 16:11:15",
+  "data": {
+    "AEL-AIR": {
+      "curr_time": "2026-10-02 16:11:15",
+      "sys_time": "2026-10-02 16:11:15",
+      "UP": [
+        {
+          "seq": "1",
+          "dest": "AWE",
+          "plat": "1/3",
+          "time": "2026-10-02 16:12:00",
+          "ttnt": "2",
+          "valid": "Y",
+          "source": "-"
+        },
+        {
+          "seq": "2",
+          "dest": "AWE",
+          "plat": "1/3",
+          "time": "2026-10-02 16:23:00",
+          "ttnt": "13",
+          "valid": "Y",
+          "source": "-"
+        },
+        {
+          "seq": "3",
+          "dest": "AWE",
+          "plat": "1/3",
+          "time": "2026-10-02 16:33:00",
+          "ttnt": "23",
+          "valid": "Y",
+          "source": "-"
+        },
+        {
+          "seq": "4",
+          "dest": "AWE",
+          "plat": "1/3",
+          "time": "2026-10-02 16:41:00",
+          "ttnt": "30",
+          "valid": "Y",
+          "source": "+"
+        }
+      ],
+      "DOWN": [
+        {
+          "seq": "1",
+          "dest": "HOK",
+          "plat": "2/4",
+          "time": "2026-10-02 16:15:00",
+          "ttnt": "4",
+          "valid": "Y",
+          "source": "-"
+        },
+        {
+          "seq": "2",
+          "dest": "HOK",
+          "plat": "2/4",
+          "time": "2026-10-02 16:26:00",
+          "ttnt": "15",
+          "valid": "Y",
+          "source": "+"
+        },
+        {
+          "seq": "3",
+          "dest": "HOK",
+          "plat": "2/4",
+          "time": "2026-10-02 16:35:00",
+          "ttnt": "24",
+          "valid": "Y",
+          "source": "+"
+        },
+        {
+          "seq": "4",
+          "dest": "HOK",
+          "plat": "2/4",
+          "time": "2026-10-02 16:45:00",
+          "ttnt": "34",
+          "valid": "Y",
+          "source": "+"
+        }
+      ]
+    }
+  },
+  "isdelay": "N",
+  "status": 1,
+  "message": "successful"
+}

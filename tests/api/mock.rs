@@ -186,7 +186,7 @@ async fn simulates_a_board_shaped_like_the_real_one() {
         assert_eq!(trains.len(), 4);
         for train in trains {
             assert!(array(&towards).contains(&train["destination"]), "{train}");
-            assert_eq!(train["platform"], platform);
+            assert_eq!(train["platforms"], json!([platform]));
             assert!(train["arrival_at"].as_str().unwrap_or_default() >= generated_at);
             assert_eq!(train["time_type"], Value::Null);
             assert_eq!(train["via_racecourse"], false);

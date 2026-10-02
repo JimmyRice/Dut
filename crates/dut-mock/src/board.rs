@@ -10,7 +10,7 @@ use jiff::Timestamp;
 
 use dut_core::domain::{
     network::{ByDirection, Direction, Line, StationCode},
-    next_train::{NextTrainBoard, TimeType, TrainArrival},
+    next_train::{NextTrainBoard, Platforms, TimeType, TrainArrival},
 };
 
 use crate::{
@@ -203,11 +203,11 @@ impl Departures {
         now: i64,
         position: usize,
     ) -> Option<TrainArrival> {
-        let platforms = platforms::at(self.line, self.station, self.direction);
-        let platform = platforms
-            .get(number.rem_euclid(platforms.len().max(1) as i64) as usize)
+        let turns = platforms::at(self.line, self.station, self.direction);
+        let platforms = turns
+            .get(number.rem_euclid(turns.len().max(1) as i64) as usize)
             .copied()
-            .unwrap_or(1);
+            .unwrap_or(Platforms::NONE);
         // The East Rail Line tells arrivals from departures, which are where
         // a train starts.
         let time_type =
@@ -220,7 +220,7 @@ impl Departures {
         Some(TrainArrival {
             sequence: u8::try_from(position + 1).ok()?,
             destination: train.working.to,
-            platform,
+            platforms,
             arrival_at: Timestamp::from_second(published(now, due)).ok()?,
             time_type,
             via_racecourse: train.via_racecourse,
@@ -415,7 +415,7 @@ mod tests {
                 "{context}"
             );
             assert!(
-                platforms::at(line, station, direction).contains(&train.platform),
+                platforms::at(line, station, direction).contains(&train.platforms),
                 "{context}"
             );
             assert_eq!(
@@ -587,17 +587,36 @@ mod tests {
         let admiralty = board(Line::EastRail, "ADM", BoardScenario::Peak, morning());
         let sha_tin = board(Line::EastRail, "SHT", BoardScenario::Peak, morning());
 
-        assert!(
-            admiralty.trains.up.iter().all(|train| {
-                train.time_type == Some(TimeType::Departure) && train.platform == 7
-            })
-        );
+        assert!(admiralty.trains.up.iter().all(|train| {
+            train.time_type == Some(TimeType::Departure) && train.platforms == Platforms::one(7)
+        }));
         assert!(
             sha_tin
                 .trains
                 .up
                 .iter()
                 .all(|train| train.time_type == Some(TimeType::Arrival))
+        );
+    }
+
+    #[test]
+    fn airport_express_trains_stand_at_two_platforms_at_airport() {
+        let airport = board(Line::AirportExpress, "AIR", BoardScenario::Peak, morning());
+
+        assert!(!airport.trains.up.is_empty() && !airport.trains.down.is_empty());
+        assert!(
+            airport
+                .trains
+                .up
+                .iter()
+                .all(|train| train.platforms == Platforms::pair(1, 3))
+        );
+        assert!(
+            airport
+                .trains
+                .down
+                .iter()
+                .all(|train| train.platforms == Platforms::pair(2, 4))
         );
     }
 

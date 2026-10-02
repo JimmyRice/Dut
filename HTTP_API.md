@@ -393,14 +393,14 @@ curl http://127.0.0.1:3000/api/lines/TKL/stations/TKO/next-trains
       "trains": [
         {
           "destination": { "code": "POA", "name": { "en": "Po Lam", "tc": "寶琳" } },
-          "platform": 1,
+          "platforms": [1],
           "arrival_at": "2026-09-28T01:13:49+08:00",
           "time_type": null,
           "via_racecourse": false
         },
         {
           "destination": { "code": "LHP", "name": { "en": "LOHAS Park", "tc": "康城" } },
-          "platform": 1,
+          "platforms": [1],
           "arrival_at": "2026-09-28T01:16:49+08:00",
           "time_type": null,
           "via_racecourse": false
@@ -439,9 +439,21 @@ curl http://127.0.0.1:3000/api/lines/TKL/stations/TKO/next-trains
 ```json
 {
   "destination": { "code": "SHS", "name": { "en": "Sheung Shui", "tc": "上水" } },
-  "platform": 2,
+  "platforms": [2],
   "arrival_at": "2026-09-28T00:19:34+08:00",
   "time_type": "arrival",
+  "via_racecourse": false
+}
+```
+
+机场站的机场快綫列车两侧车门同时打开，所以停靠两个月台（`GET /api/lines/AEL/stations/AIR/next-trains` 于 2026-10-02 16:32 的真实响应中 `trains` 的一个元素）。往香港的列车是 `[2, 4]`：
+
+```json
+{
+  "destination": { "code": "AWE", "name": { "en": "AsiaWorld-Expo", "tc": "博覽館" } },
+  "platforms": [1, 3],
+  "arrival_at": "2026-10-02T16:33:00+08:00",
+  "time_type": null,
   "via_racecourse": false
 }
 ```
@@ -485,7 +497,7 @@ curl http://127.0.0.1:3000/api/lines/TKL/stations/TKO/next-trains
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `destination` | object | 列车终点站，见[车站引用](#车站引用-station) |
-| `platform` | integer | 月台编号 |
+| `platforms` | array（integer） | 列车停靠的月台编号，按港铁给出的顺序排列。通常只有一个，例如 `[1]`。机场站的机场快綫列车两侧车门同时打开，停靠两个月台：往博覽館为 `[1, 3]`，往香港为 `[2, 4]`，适合显示为"1 及 3 号月台"。港铁给出的月台无法识别时为空数组 `[]`，列车照常列出 |
 | `arrival_at` | string（时间） | 预计到站时间；`time_type` 为 `departure` 时是预计开出时间。**倒计时请用它计算** |
 | `time_type` | string 或 `null` | 仅东铁线提供：`arrival`（到站）或 `departure`（开出，常见于始发站）。其他线路为 `null` |
 | `via_racecourse` | boolean | 仅东铁线有意义：列车是否经马场站（而不是火炭站）。其他线路恒为 `false` |
@@ -1458,7 +1470,7 @@ curl --compressed http://127.0.0.1:3000/api/data/accessibility
 ### 模拟数据有多接近真实
 
 - **线路与车站**：线路、车站、支线、行车方向和 `towards` 都来自服务内置的静态资料，与正式接口完全相同。
-- **月台**：取自 2026-10-02 早上两次抓取的全部车站的港铁实时数据。包括同一车站不同线路的月台编号重复（例如美孚两条线都有 1 号月台）、换乘站的特殊编号（例如金鐘港島綫往柴灣是 3 号），以及终点站轮流使用两个月台（例如中環荃灣綫 1、2 号）。港铁在机场站返回 `1/3`、`2/4` 这样的月台，这里取第一个数字。
+- **月台**：取自 2026-10-02 早上两次抓取的全部车站的港铁实时数据。包括同一车站不同线路的月台编号重复（例如美孚两条线都有 1 号月台）、换乘站的特殊编号（例如金鐘港島綫往柴灣是 3 号），以及终点站轮流使用两个月台（例如中環荃灣綫 1、2 号）。机场站的机场快綫列车与正式接口一样停靠两个月台（`[1, 3]` 和 `[2, 4]`）。
 - **班次**：各线按下表的班距行车，并有真实的中途折返班次：觀塘綫隔一班往何文田；將軍澳綫每三班有一班往康城，深夜康城列车只往返調景嶺；東鐵綫平时每三班有一班往落馬洲，繁忙时间每四班中一班往落馬洲、一班只到大埔墟，深夜每三班有一班只到上水；東涌綫繁忙时间每三班有一班只到青衣；機場快綫全部驶往博覽館。支线车站的班次相应较疏，例如坑口只有往寶琳的列车。
 - **时间格式**：与港铁一样，`arrival_at` 等于 `generated_at` 加整数分钟，正在月台上的列车为 0 分钟；`generated_at` 比 `fetched_at` 早 2 至 8 秒；数据每 10 秒刷新一次，`max-age` 与正式接口一样在 2 至 10 秒之间。東鐵綫在始发站（金鐘、羅湖、落馬洲）给出 `departure`，其余车站给出 `arrival`。
 - **不规则**：每班车都有少量随机偏差，但不会超越前车。`delayed` 场景下班距拉长到 1.7 倍，偏差更大，约八分之一的班次取消，所以会出现列车扎堆和长时间空档。
@@ -1731,28 +1743,28 @@ curl -i 'http://127.0.0.1:3000/api/mock/lines/EAL/stations/SHT/next-trains?scena
       "trains": [
         {
           "destination": { "code": "LMC", "name": { "en": "Lok Ma Chau", "tc": "落馬洲" } },
-          "platform": 2,
+          "platforms": [2],
           "arrival_at": "2026-10-02T07:52:04+08:00",
           "time_type": "arrival",
           "via_racecourse": false
         },
         {
           "destination": { "code": "LOW", "name": { "en": "Lo Wu", "tc": "羅湖" } },
-          "platform": 2,
+          "platforms": [2],
           "arrival_at": "2026-10-02T07:55:04+08:00",
           "time_type": "arrival",
           "via_racecourse": false
         },
         {
           "destination": { "code": "LOW", "name": { "en": "Lo Wu", "tc": "羅湖" } },
-          "platform": 2,
+          "platforms": [2],
           "arrival_at": "2026-10-02T07:58:04+08:00",
           "time_type": "arrival",
           "via_racecourse": false
         },
         {
           "destination": { "code": "TAP", "name": { "en": "Tai Po Market", "tc": "大埔墟" } },
-          "platform": 2,
+          "platforms": [2],
           "arrival_at": "2026-10-02T08:00:04+08:00",
           "time_type": "arrival",
           "via_racecourse": false
@@ -1767,7 +1779,7 @@ curl -i 'http://127.0.0.1:3000/api/mock/lines/EAL/stations/SHT/next-trains?scena
       "trains": [
         {
           "destination": { "code": "ADM", "name": { "en": "Admiralty", "tc": "金鐘" } },
-          "platform": 3,
+          "platforms": [3],
           "arrival_at": "2026-10-02T07:50:04+08:00",
           "time_type": "arrival",
           "via_racecourse": false
@@ -1863,7 +1875,7 @@ curl -i 'http://127.0.0.1:3000/api/mock/stations/ADM/next-trains?scenario=partia
             "trains": [
               {
                 "destination": { "code": "LOW", "name": { "en": "Lo Wu", "tc": "羅湖" } },
-                "platform": 7,
+                "platforms": [7],
                 "arrival_at": "2026-10-02T07:53:57+08:00",
                 "time_type": "departure",
                 "via_racecourse": false
@@ -1962,6 +1974,7 @@ curl -i 'http://127.0.0.1:3000/api/mock/stations/ADM/next-trains?scenario=partia
 
 | 日期 | 变更 |
 |---|---|
+| 2026-10-02 | **不兼容变更。** 列车到站接口（`GET /api/lines/{line}/stations/{station}/next-trains`、`GET /api/stations/{station}/next-trains`）和对应的 Mock 接口中，列车的 `platform`（整数）改为 `platforms`（整数数组）。通常只有一个月台，例如 `[1]`；机场站的机场快綫列车两侧开门，为 `[1, 3]` 或 `[2, 4]`；港铁给出的月台无法识别时为 `[]`，列车照常列出。此前港铁在机场站返回 `1/3` 这样的月台，导致 `GET /api/lines/AEL/stations/AIR/next-trains` 和 `GET /api/stations/AIR/next-trains`（机场站只有机场快綫）都返回 `502 upstream_unavailable`。 |
 | 2026-10-02 | 新增 Mock 接口，供 App 开发调试：`GET /api/mock/scenarios`、`GET /api/mock/lines/status`、`GET /api/mock/lines/{line}/stations/{station}/next-trains`、`GET /api/mock/stations/{station}/next-trains`。按 `scenario`（或 `random`）和 `seed` 查询参数返回与正式接口结构相同的模拟数据，响应头带 `x-mock-scenario` 和 `x-mock-seed`。默认关闭，用 `--mock-api` 或 `DUT_MOCK_API` 开启。新增错误码 `400 invalid_query`、`400 unknown_scenario`。正式接口不变。 |
 | 2026-10-01 | 开放数据的数据集（`GET /api/data/stations` 等 6 个）和原始文件（`GET /api/data/sources/{file}`）改为每次拉取只编码一次、所有请求共享，gzip 改用最高压缩级别：`/api/data/fares` 从约 75 KB 降到约 71 KB。响应改带 `Content-Length` 和 `Vary: Accept-Encoding`。解压后的内容、`ETag` 和 `Cache-Control` 不变。 |
 | 2026-09-29 | 新增港铁开放数据接口：`GET /api/data`（索引）、`GET /api/data/sources/{file}`（原样的 CSV 文件）、`GET /api/data/stations`、`GET /api/data/fares`、`GET /api/data/airport-express-fares`、`GET /api/data/light-rail`、`GET /api/data/light-rail-fares`、`GET /api/data/accessibility`。数据每天拉取一次，响应带 `ETag`，支持 `If-None-Match` 返回 `304`；车费以港仙整数表示。所有响应在客户端接受时以 gzip 压缩。新增错误码 `404 unknown_source`。 |
