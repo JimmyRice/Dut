@@ -85,7 +85,7 @@ curl http://127.0.0.1:3000/api/lines/TKL/stations/TKO/next-trains
       "trains": [
         {
           "destination": { "code": "POA", "name": { "en": "Po Lam", "tc": "寶琳" } },
-          "platform": 1,
+          "platforms": [1],
           "arrival_at": "2026-09-28T01:13:49+08:00",
           "time_type": null,
           "via_racecourse": false

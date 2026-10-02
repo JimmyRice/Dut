@@ -2,18 +2,20 @@
 //!
 //! The shapes follow what the API actually returns, which differs from the
 //! data dictionary in places: numbers such as `seq` and `plat` arrive as
-//! strings, the East Rail Line field is spelled `timeType`, and errors use a
-//! separate `{resultCode, error: {errorCode, errorMsg}}` envelope.
+//! strings, `plat` is two numbers such as `1/3` at Airport, the East Rail Line
+//! field is spelled `timeType`, and errors use a separate
+//! `{resultCode, error: {errorCode, errorMsg}}` envelope.
 
 use std::collections::HashMap;
 
 use jiff::Timestamp;
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, de::IgnoredAny};
 use thiserror::Error;
+use tracing::warn;
 
 use dut_core::domain::{
     network::{ByDirection, Line, StationCode},
-    next_train::{AlertNotice, NextTrainBoard, TimeType, TrainArrival},
+    next_train::{AlertNotice, NextTrainBoard, Platforms, TimeType, TrainArrival},
 };
 
 use crate::mtr::time::parse_local;
@@ -69,13 +71,35 @@ struct TrainEntry {
     #[serde(deserialize_with = "lenient_number")]
     seq: u8,
     dest: String,
-    #[serde(deserialize_with = "lenient_number")]
-    plat: u8,
+    /// Kept as sent, so that a platform the API garbles leaves the train
+    /// listed without one instead of failing the whole board.
+    #[serde(default)]
+    plat: Option<RawPlatforms>,
     time: String,
     #[serde(rename = "timeType", alias = "timetype", default)]
     time_type: Option<String>,
     #[serde(default)]
     route: Option<String>,
+}
+
+/// A train's `plat` as the API sent it: usually a string such as `"1"`, or
+/// `"1/3"` at Airport.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum RawPlatforms {
+    Text(String),
+    Number(u8),
+    Other(IgnoredAny),
+}
+
+impl RawPlatforms {
+    fn platforms(&self) -> Option<Platforms> {
+        match self {
+            Self::Text(text) => text.parse().ok(),
+            Self::Number(number) => Some(Platforms::one(*number)),
+            Self::Other(_) => None,
+        }
+    }
 }
 
 /// What the API said about one station.
@@ -163,11 +187,23 @@ impl TrainEntry {
             Some("D") => Some(TimeType::Departure),
             _ => None,
         };
+        let platforms = self
+            .plat
+            .as_ref()
+            .and_then(RawPlatforms::platforms)
+            .unwrap_or_else(|| {
+                warn!(
+                    plat = ?self.plat,
+                    destination = %destination,
+                    "Next Train API published an unreadable platform; listing the train without one"
+                );
+                Platforms::NONE
+            });
 
         Ok(TrainArrival {
             sequence: self.seq,
             destination,
-            platform: self.plat,
+            platforms,
             arrival_at: parse_time(&self.time)?,
             time_type,
             via_racecourse: self.route.as_deref() == Some("RAC"),
@@ -248,6 +284,15 @@ mod tests {
         }
     }
 
+    fn platforms(board: &NextTrainBoard, direction: Direction) -> Vec<Platforms> {
+        board
+            .trains
+            .get(direction)
+            .iter()
+            .map(|train| train.platforms)
+            .collect()
+    }
+
     #[test]
     fn decodes_a_regular_board() {
         let schedule = fixture("next_train_tkl_tko.json")
@@ -269,7 +314,7 @@ mod tests {
             TrainArrival {
                 sequence: 1,
                 destination: code("LHP"),
-                platform: 1,
+                platforms: Platforms::one(1),
                 arrival_at: parse_local("2026-09-27 22:36:36").expect("valid time"),
                 time_type: None,
                 via_racecourse: false,
@@ -291,6 +336,47 @@ mod tests {
         assert!(!up[0].via_racecourse);
         assert_eq!(up[1].time_type, Some(TimeType::Departure));
         assert!(up[1].via_racecourse);
+    }
+
+    #[test]
+    fn decodes_both_platforms_at_airport() {
+        let schedule = fixture("next_train_ael_air.json")
+            .into_schedule(Line::AirportExpress, code("AIR"), Timestamp::UNIX_EPOCH)
+            .expect("board should convert");
+        let (board, _) = published(schedule);
+
+        assert_eq!(platforms(&board, Direction::Up), [Platforms::pair(1, 3); 4]);
+        assert_eq!(
+            platforms(&board, Direction::Down),
+            [Platforms::pair(2, 4); 4]
+        );
+    }
+
+    #[test]
+    fn keeps_a_train_whose_platform_is_unreadable() {
+        let response: ScheduleResponse = serde_json::from_str(
+            r#"{"status":1,"curr_time":"2026-10-02 16:11:15","data":{"AEL-AIR":{"UP":[
+                {"seq":"1","dest":"AWE","plat":"","time":"2026-10-02 16:12:00"},
+                {"seq":"2","dest":"AWE","plat":"1/2/3","time":"2026-10-02 16:23:00"},
+                {"seq":"3","dest":"AWE","plat":null,"time":"2026-10-02 16:33:00"},
+                {"seq":"4","dest":"AWE","plat":[1],"time":"2026-10-02 16:41:00"}
+            ],"DOWN":[
+                {"seq":"1","dest":"HOK","time":"2026-10-02 16:15:00"},
+                {"seq":"2","dest":"HOK","plat":"2/4","time":"2026-10-02 16:26:00"}
+            ]}}}"#,
+        )
+        .expect("response should decode");
+
+        let schedule = response
+            .into_schedule(Line::AirportExpress, code("AIR"), Timestamp::UNIX_EPOCH)
+            .expect("board should convert");
+        let (board, _) = published(schedule);
+
+        assert_eq!(platforms(&board, Direction::Up), [Platforms::NONE; 4]);
+        assert_eq!(
+            platforms(&board, Direction::Down),
+            [Platforms::NONE, Platforms::pair(2, 4)]
+        );
     }
 
     #[test]
@@ -345,12 +431,20 @@ mod tests {
 
     #[test]
     fn accepts_numbers_as_numbers_or_strings() {
-        let entry: TrainEntry = serde_json::from_str(
-            r#"{"seq":2,"dest":"POA","plat":"1","time":"2026-09-27 22:38:36"}"#,
-        )
-        .expect("entry should decode");
+        let entry = |json: &str| -> (u8, Platforms) {
+            let entry: TrainEntry = serde_json::from_str(json).expect("entry should decode");
+            let train = entry.into_arrival().expect("entry should convert");
+            (train.sequence, train.platforms)
+        };
 
-        assert_eq!((entry.seq, entry.plat), (2, 1));
+        assert_eq!(
+            entry(r#"{"seq":2,"dest":"POA","plat":"1","time":"2026-09-27 22:38:36"}"#),
+            (2, Platforms::one(1))
+        );
+        assert_eq!(
+            entry(r#"{"seq":"2","dest":"POA","plat":1,"time":"2026-09-27 22:38:36"}"#),
+            (2, Platforms::one(1))
+        );
     }
 
     #[test]

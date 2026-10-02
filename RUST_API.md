@@ -14,7 +14,7 @@ this file in the same change.
 
 The snippets in this file are not compiled. The doc comments on
 `Subscriber`, `Feed`, `dut_poll::spawn`, `Line::towards`, `Line::leads`,
-`StationCode`, `Fare`, and `HONG_KONG` carry examples that `cargo test`
+`StationCode`, `Fare`, `Platforms`, and `HONG_KONG` carry examples that `cargo test`
 compiles and runs, and `cargo doc --open` shows. When the two disagree, the doc comment is
 right and this file needs updating.
 
@@ -360,12 +360,13 @@ codes are assigned independently of station codes.
 | `localized` | `Localized<T> { en, tc }` for anything published in English and Traditional Chinese |
 | `time` | `HONG_KONG`, the fixed UTC+8 offset. Times are `jiff::Timestamp`; show them with `display_with_offset(HONG_KONG)` |
 | `line_status` | `LineCondition` (`Normal`, `Delayed`, `Disrupted`, `DelayedOrDisrupted`, `NonServiceHours`, `TyphoonSignal`, `Unknown(String)`) with `display_color()`; `LineStatus`; `NetworkStatus::changes_since` |
-| `next_train` | `NextTrainBoard` with `signal()`; `TrainArrival` (absolute `arrival_at`, never a countdown); `AlertNotice`; `NextTrainSignal`; `NextTrainSignals::changes_since` |
+| `next_train` | `NextTrainBoard` with `signal()`; `TrainArrival` (absolute `arrival_at`, never a countdown; `platforms`); `Platforms`, `Copy`: usually `Platforms::one(n)`, `Platforms::pair(1, 3)` at Airport where trains open their doors on both sides, `Platforms::NONE` when unreadable. `"1/3".parse::<Platforms>()`, `as_slice()`; `AlertNotice`; `NextTrainSignal`; `NextTrainSignals::changes_since` |
 | `weather` | `WeatherWarning` (every Observatory warning, including `TropicalCyclone(CycloneSignal)`, `PreNo8Announcement`, `Rainstorm(RainstormLevel)`, and `Unrecognised(String)`); `ActiveWarning`; `WeatherWarnings::changes_since` |
 | `source_health` | `SourceId` (`MtrLineStatus`, `MtrNextTrain`, `HkoWarnings`, `MtrOpenData`), `HealthState`, `HealthChange` |
 
 An unrecognised upstream value is kept verbatim (`Unknown`, `Unrecognised`)
-and logged, rather than failing the whole document.
+and logged, rather than failing the whole document. Likewise, a train whose
+platform is unreadable keeps its place on the board with `Platforms::NONE`.
 
 ## Outbound HTTP
 

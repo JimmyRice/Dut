@@ -162,7 +162,9 @@ impl Serialize for Upcoming<'_> {
 #[derive(Debug, Serialize)]
 pub(super) struct TrainBody<'a> {
     pub destination: StationRef<'a>,
-    pub platform: u8,
+    /// Usually one platform; two at Airport, where trains open their doors
+    /// on both sides; none when the MTR's platform was unreadable.
+    pub platforms: &'a [u8],
     /// Estimated arrival, or departure when `time_type` is `departure`.
     /// Clients derive countdowns from this absolute time.
     pub arrival_at: HktTime,
@@ -176,7 +178,7 @@ impl<'a> From<&'a TrainArrival> for TrainBody<'a> {
     fn from(train: &'a TrainArrival) -> Self {
         Self {
             destination: (&train.destination).into(),
-            platform: train.platform,
+            platforms: train.platforms.as_slice(),
             arrival_at: HktTime(train.arrival_at),
             time_type: train.time_type.map(|time_type| match time_type {
                 TimeType::Arrival => "arrival",
