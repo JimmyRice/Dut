@@ -54,10 +54,15 @@ layer.
 | `dut-telemetry` | telemetry | Log output and log-field conventions | none |
 | `dut-http` | infrastructure | `OutboundHttpClient` and upstream freshness parsing | telemetry |
 | `dut-upstream` | infrastructure | MTR and Observatory adapters, MTR open data cleaning, `RefreshingCache`, the connectivity check | core, http, telemetry |
+| `dut-mock` | simulation | Simulated Next Train boards and line status for the mock API, without I/O | core |
 | `dut-poll` | background | Polls `Feed`s on a schedule, keeps their latest value and source health | core, telemetry |
 | `dut-monitor` | background | Watches polled feeds and publishes each change as a `MonitorEvent` | core, poll |
-| `dut-api` | api | Axum routes, DTOs, middleware, `ApiError`, `AppState` | core, telemetry |
+| `dut-api` | api | Axum routes, DTOs, middleware, `ApiError`, `AppState` | core, mock, telemetry |
 | `dut` (root package) | bootstrap | Command line, configuration, wiring, process lifecycle | all |
+
+`dut-mock` is kept out of `dut-core`, whose domain and use cases serve
+riders: the simulation is a development tool, and its timetables and
+captured platforms are approximations no rider-facing code should rely on.
 
 `dut-poll` and `dut-monitor` are split at a deployment boundary. Every API
 instance polls, because the line status endpoint serves the polled value;
@@ -77,7 +82,9 @@ events.
 - `api`: Axum routes, request/response DTOs, validation, request ID and
   tracing middleware, and the mapping from application results to HTTP
   responses. `AppState` holds the services shared by handlers. Its data
-  sources are type parameters, so `dut-api` never depends on an adapter.
+  sources are type parameters, so `dut-api` never depends on an upstream
+  adapter. The mock routes call `dut-mock` directly: simulated data is what
+  they serve, and `dut-mock` performs no I/O.
 - `bootstrap`: The composition root and process lifecycle, in the root
   package's `src/`. It reads the command line, holds the configuration and
   startup errors, creates infrastructure and services, assembles `AppState`,
@@ -87,6 +94,8 @@ events.
   of what a feed contains; `dut-monitor` interprets changes through the diffs
   that `dut-core` defines on its domain types.
 - `telemetry`: Log output and log-field conventions shared by every crate.
+- `simulation`: Data that stands in for the upstreams, for developing the
+  app; see "Mock API".
 
 ## Request flow
 
@@ -128,13 +137,15 @@ crates/
                   request_blocks (terminal view, one block per request)
   dut-http/       client (OutboundHttpClient), freshness
   dut-upstream/   cache, connectivity, mtr/{next_train, line_status, open_data}, hko/warnings
+  dut-mock/       scenario, seed, timetable, platforms, board, network_status, notices,
+                  simulated (SimulatedNextTrains, SimulatedLineStatus)
   dut-poll/       poller (spawn), schedule, health, state, handle (FeedHandle),
                   line_status, reference_data (the ports, served from polled feeds)
   dut-monitor/    monitor (spawn, MonitorHandle), watcher, delivery (runs a Subscriber),
                   signals, event_log
   dut-api/        router, routes, dto, error, http_cache, middleware, state
 tests/api/        route-level tests of the whole application
-tests/fixtures/   captured upstream responses, also read by dut-upstream's unit tests
+tests/fixtures/   captured upstream responses, also read by dut-upstream's and dut-mock's unit tests
 ```
 
 Every `lib.rs` and `mod.rs` is an index: module documentation, `mod`
@@ -352,6 +363,41 @@ heartbeat.
 Do not introduce repository or service abstractions without a real consumer.
 The layer and dependency direction are fixed, while individual abstractions
 should be added when their contracts are known.
+
+## Mock API
+
+`/api/mock` serves the real-time endpoints' responses simulated in a
+scenario, such as rush hour, the last train, a suspended line, or an
+upstream outage, so the app can be developed and tested against situations
+that are rare or inconvenient to wait for live.
+
+- **Off by default.** `--mock-api` (`DUT_MOCK_API`) turns it on; without it
+  `/api/mock/*` is an unknown route. A release of the app that calls it by
+  mistake then gets `404` rather than showing riders made-up trains.
+- **Same contract.** Each mock route mirrors a real one under `/mock` and
+  answers with the same DTOs, `Cache-Control`, and errors, so the app swaps
+  its path prefix and nothing else. Boards are validated and a station's
+  boards assembled by the same `NextTrainService`, which `dut-mock` feeds
+  through the `NextTrainSource` port, so a mock request fails exactly where
+  a real one would.
+- **Reproducible.** A scenario name or `random`, and a `seed`, pick what is
+  simulated; responses name both in `x-mock-scenario` and `x-mock-seed`.
+  Every random choice is drawn from a stream keyed by the seed and what it
+  decides, such as one train of one line, so it never depends on the order
+  of other draws.
+- **Time-consistent.** Each line runs its timetable in absolute time: train
+  `n` passes a reference station `n` headways after the epoch, plus a phase
+  and a deviation from the seed, and reaches every other station a fixed
+  number of stops later. A polled board therefore shows its trains
+  approaching and leaving, and neighbouring stations agree, without any
+  state kept between requests (see "Stateless first").
+- **Realistic.** Platforms and short workings come from captures of every
+  live Next Train board (the peak one is kept in `tests/fixtures`), and unit
+  tests check the simulation against them. Headways differ by part of the
+  day; times are whole minutes from `generated_at`, as the MTR publishes
+  them; messages follow the MTR's wording.
+- **Cost.** Nothing is cached or polled, and no upstream is called. A
+  request simulates at most 64 trains per direction of each line it covers.
 
 ## Monitor
 

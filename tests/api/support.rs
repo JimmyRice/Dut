@@ -56,6 +56,21 @@ impl TestApp {
     /// first. Weather warnings default to none in force; open data is
     /// unavailable unless [`mount_open_data`] was called.
     pub(crate) async fn serving(upstream: MockServer) -> Self {
+        Self::configured(upstream, |config| config).await
+    }
+
+    /// The application with the mock API enabled, wired to a fake upstream
+    /// that has nothing mounted, which the mock routes must never need.
+    pub(crate) async fn with_mock_api() -> Self {
+        Self::configured(MockServer::start().await, |config| {
+            config.with_mock_api(true)
+        })
+        .await
+    }
+
+    /// The application wired to `upstream`, with the test configuration
+    /// adjusted by `adjust`.
+    async fn configured(upstream: MockServer, adjust: impl FnOnce(AppConfig) -> AppConfig) -> Self {
         raise_open_file_limit();
         Mock::given(method("GET"))
             .and(path(WEATHER_WARNINGS_PATH))
@@ -73,7 +88,7 @@ impl TestApp {
             ))
             .with_mtr_open_data_endpoint(format!("{}{OPEN_DATA_PATH}", upstream.uri()))
             .without_proxy();
-        let router = build_app(&config).expect("test application should build");
+        let router = build_app(&adjust(config)).expect("test application should build");
 
         Self { router, upstream }
     }

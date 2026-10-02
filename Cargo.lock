@@ -443,6 +443,7 @@ version = "0.4.1"
 dependencies = [
  "axum",
  "dut-core",
+ "dut-mock",
  "dut-telemetry",
  "flate2",
  "jiff",
@@ -477,6 +478,17 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "dut-mock"
+version = "0.4.1"
+dependencies = [
+ "dut-core",
+ "jiff",
+ "serde_json",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]

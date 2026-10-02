@@ -24,8 +24,31 @@ Dut 是一个用 Rust 编写的港铁（MTR）实时数据 API，也是 MTRGo Ap
 | `GET` | `/api/data/light-rail` | 轻铁车站和路线 |
 | `GET` | `/api/data/light-rail-fares` | 轻铁车费 |
 | `GET` | `/api/data/accessibility` | 无障碍设施目录和各站设施 |
+| `GET` | `/api/mock/...` | 开发用的 Mock 接口，按场景模拟线路状态和列车到站，默认关闭，见下方 [Mock 接口](#mock-接口) |
 
 参数、字段说明、缓存行为和错误码见 [HTTP_API.md](HTTP_API.md)。
+
+## Mock 接口
+
+开发 App 时，很多情况很难等到：八号风球、线路暂停、尾班车、港铁故障。用 `--mock-api` 启动服务后，`/api/mock` 下的接口会按场景返回模拟数据，结构与正式接口完全相同，App 只需把路径前缀从 `/api` 换成 `/api/mock`：
+
+```bash
+cargo run -- --mock-api
+```
+
+```bash
+curl 'http://127.0.0.1:3000/api/mock/lines/status?scenario=typhoon_signal'
+```
+
+```bash
+curl 'http://127.0.0.1:3000/api/mock/stations/ADM/next-trains?scenario=delayed&seed=7'
+```
+
+- `scenario` 选择场景，例如 `peak`、`last_train`、`delayed`、`partial_outage`；不传或传 `random` 时按权重随机抽一个。`GET /api/mock/scenarios` 列出所有场景和说明。
+- `seed` 决定模拟出哪一组数据。同一个 `seed` 的列车按真实时间运行，轮询时会逐渐接近、到站、离开。响应头 `x-mock-scenario` 和 `x-mock-seed` 写明实际用了哪个场景和 `seed`，可以据此重现。
+- 模拟数据尽量贴近真实：月台编号、支线和中途折返班次（將軍澳綫往康城、觀塘綫往何文田、東鐵綫往大埔墟等）取自港铁实时数据，各线班距按繁忙、非繁忙、深夜区分，线路状态的说明文字仿照港铁通告。
+
+完整说明见 [HTTP_API.md 的 Mock 接口](HTTP_API.md#mock-接口的共同行为)。乘客使用的正式部署不需要开启，这样 App 正式版万一误调 Mock 接口，只会得到 404。
 
 ## 快速开始
 
@@ -102,6 +125,7 @@ curl http://127.0.0.1:3000/api/lines/TKL/stations/TKO/next-trains
 | `--bind-address <ADDRESS>` | `DUT_BIND_ADDRESS` | `127.0.0.1:3000` | 监听的 IP 和端口，例如 `0.0.0.0:3000` 或 `[::]:3000`。只能写 IP，不能写主机名 |
 | `--log-level <LEVEL>` | `RUST_LOG` | `info,dut=debug,tower_http=debug` | 输出哪些日志，见[日志](#日志) |
 | `--log-file <PATH>` | `DUT_LOG_FILE` | 不写文件 | 把日志额外追加到这个文件，见[日志](#日志) |
+| `--mock-api` | `DUT_MOCK_API` | 关闭 | 开启 `/api/mock` 下的 Mock 接口，见 [Mock 接口](#mock-接口)。环境变量接受 `true`/`false`、`1`/`0`、`yes`/`no`、`on`/`off` |
 
 `dut --help` 列出所有参数，`dut --version` 输出版本号。用 `cargo run` 时，参数写在 `--` 后面：
 

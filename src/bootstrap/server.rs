@@ -29,6 +29,7 @@ async fn serve(config: AppConfig) -> Result<(), StartupError> {
     let polling = config.polling();
     info!(
         bind_address = %config.bind_address(),
+        mock_api = config.mock_api(),
         outbound_http_timeout_ms = millis(config.outbound_http_timeout()),
         outbound_proxy = ?config.outbound_proxy(),
         next_train_endpoint = mtr.next_train_endpoint,

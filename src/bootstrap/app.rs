@@ -104,7 +104,8 @@ pub(super) fn assemble(config: &AppConfig) -> Result<App, StartupError> {
         next_trains,
         LineStatusService::new(line_status),
         ReferenceDataService::new(reference_data),
-    );
+    )
+    .with_mock_api(config.mock_api());
 
     Ok(App {
         router: dut_api::router(state),

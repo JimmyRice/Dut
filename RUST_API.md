@@ -13,9 +13,9 @@ When a public trait, handle, or entry point described here changes, update
 this file in the same change.
 
 The snippets in this file are not compiled. The doc comments on
-`Subscriber`, `Feed`, `dut_poll::spawn`, `Line::towards`, `StationCode`,
-`Fare`, and `HONG_KONG` carry examples that `cargo test` compiles and runs,
-and `cargo doc --open` shows. When the two disagree, the doc comment is
+`Subscriber`, `Feed`, `dut_poll::spawn`, `Line::towards`, `Line::leads`,
+`StationCode`, `Fare`, and `HONG_KONG` carry examples that `cargo test`
+compiles and runs, and `cargo doc --open` shows. When the two disagree, the doc comment is
 right and this file needs updating.
 
 ## Where to start
@@ -30,6 +30,7 @@ right and this file needs updating.
 | Call an upstream over HTTP | [`OutboundHttpClient::fetch`](#outbound-http) | `dut-http` |
 | Work with lines, stations, directions, bilingual names | [Domain vocabulary](#domain-vocabulary) | `dut-core` |
 | Let an operator set something at startup, such as a credential | Add an option to a group in `CommandLine`, see ARCHITECTURE.md "Configuration" | `dut` (bootstrap) |
+| Simulate Next Train boards or line status in a scenario, or add a scenario | [Simulated data](#simulated-data) | `dut-mock` |
 
 Everything is constructed once, in `src/bootstrap/app.rs`, and nowhere else.
 Business logic receives what it needs from there.
@@ -40,7 +41,7 @@ Business logic receives what it needs from there.
 | --- | --- | --- | --- |
 | [`Subscriber`](#subscriber) | React to monitor events | `EventLog` (dut-monitor) | `monitor.attach(..)` in bootstrap |
 | [`Feed`](#feed) | Read a whole upstream document on a schedule | `MtrLineStatusFeed`, `HkoWarningFeed`, `NextTrainSignalFeed` | `dut_poll::spawn(..)` in bootstrap |
-| `NextTrainSource` | Supply Next Train boards to `NextTrainService` | `MtrNextTrainSource` | `NextTrainService::new(..)` |
+| `NextTrainSource` | Supply Next Train boards to `NextTrainService` | `MtrNextTrainSource`; a private source in `dut-mock` behind `SimulatedNextTrains` | `NextTrainService::new(..)` |
 | `LineStatusSource` | Supply line status to `LineStatusService` | `FeedHandle<NetworkStatus>` | `LineStatusService::new(..)` |
 | `ReferenceDataSource` | Supply MTR open data to `ReferenceDataService` | `FeedHandle<ReferenceData>` | `ReferenceDataService::new(..)` |
 
@@ -317,7 +318,7 @@ these types around.
 
 | Item | Notes |
 | --- | --- |
-| `Line` | `AirportExpress`, `TungChung`, … `LightRail`. `"tkl".parse::<Line>()` is case-insensitive; `code()`, `name()`, `color()`, `stations()`, `termini()`, `towards(station, direction)`, `serves(station)`, `Line::serving(station)`, `Line::with_next_train()`, `Line::ALL` |
+| `Line` | `AirportExpress`, `TungChung`, … `LightRail`. `"tkl".parse::<Line>()` is case-insensitive; `code()`, `name()`, `color()`, `stations()`, `termini()`, `towards(station, direction)`, `leads(from, to, direction)` (on one branch, `to` beyond `from`), `serves(station)`, `Line::serving(station)`, `Line::with_next_train()`, `Line::ALL` |
 | `StationCode` | Three uppercase letters, `Copy`. `"tko".parse::<StationCode>()` at runtime; `StationCode::from_static("TKO")` only in `const` items, where a bad literal fails the build |
 | `Station` | `Station::find(code)` returns the known station with its bilingual `name`; `Station::all()` lists them by code |
 | `Direction`, `ByDirection<T>` | `Up`/`Down` as the Next Train API defines them per line; `ByDirection::get(direction)` |
@@ -400,6 +401,36 @@ and hands clones to adapters.
 
 Every adapter offers `probe()`, the `Probe` the connectivity check sends.
 `RefreshingCache` is private to `dut-upstream`.
+
+## Simulated data
+
+`dut-mock` simulates what the mock API serves under `/api/mock`. It performs
+no I/O and returns the same domain types as the real sources, so the mock
+routes reuse the real DTOs. ARCHITECTURE.md "Mock API" explains the design.
+
+| Item | Purpose |
+| --- | --- |
+| `Scenario` | Implemented by `BoardScenario` and `StatusScenario`: `ALL`, `USUAL`, `name()` (the `?scenario=` value), `description()` (`Localized`), `random_weight()` |
+| `ScenarioChoice<S>` | `Random` or `Named(S)`, parsed case-insensitively from `random` or a name (`UnknownScenario` otherwise). `resolve(Option<Seed>) -> (S, Seed)`: a named scenario without a seed uses `Seed::DEFAULT`; `random` draws a fresh seed and picks a scenario by weight from it |
+| `Seed` | Picks one simulated world: `Seed::new(u64)`, `Seed::DEFAULT`, `Seed::fresh()`, `value()` |
+| `SimulatedNextTrains::new(scenario, seed)` | `board(line, station).await` and `station_boards(station).await`, with the same results and errors as `NextTrainService`, which they run on a simulated `NextTrainSource`. An incident affects the requested line, or one line of the station chosen by the seed |
+| `SimulatedLineStatus::new(scenario, seed)` | `status() -> Result<Snapshot<NetworkStatus>, SourceUnavailable>`, as the polled feed would hold it now |
+
+```rust
+let (scenario, seed) = "peak".parse::<ScenarioChoice<BoardScenario>>()?.resolve(None);
+let view = SimulatedNextTrains::new(scenario, seed)
+    .board(Line::EastRail, "SHT".parse()?)
+    .await?; // BoardView, as NextTrainService::board returns
+```
+
+To add a scenario, add a variant to `BoardScenario` or `StatusScenario`
+with its name, description, and weight, decide its conditions in
+`board::Conditions::of` or `network_status`, and document it in
+HTTP_API.md. To follow a change in how the MTR runs a line, edit its
+`Timetable` in `timetable.rs` and its platforms in `platforms.rs`; the unit
+tests compare both with the capture in
+`tests/fixtures/mtr/next_train_network.json`, which can be replaced by a new
+capture of every board.
 
 ## Telemetry and conventions
 
