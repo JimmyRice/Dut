@@ -716,7 +716,7 @@ date: Mon, 28 Sep 2026 16:44:12 GMT
 - **后台拉取。** 服务启动时立即拉取全部 7 个文件，之后每 24 小时一次。请求本身不会触发上游调用。拉取失败时 5 分钟后重试。
 - **一致性。** 7 个文件在同一次拉取里读取，任何一个下载或清洗失败，这次拉取就整体作废，继续使用上一份完整数据。所以同一时刻各接口返回的数据互相对得上（例如车费里的车站代码一定能在车站资料里找到），原始 CSV 与清洗结果也出自同一份文件。
 - **`Cache-Control`。** `max-age` 是距下一次拉取的剩余秒数，最长约一天（86400 秒加 30 秒请求超时），并随时间递减。拉取一直失败时，旧数据以 `stale: true`、`Cache-Control: no-cache` 返回，最长顶替 30 天。
-- **`ETag`。** 每个响应都带弱 ETag，例如 `W/"0.4.1-5987f5c9680ce780"`。清洗后的数据集，ETag 由服务版本号和数据内容决定：港铁文件改了、但清洗结果没变时 ETag 不变；服务升级改了 JSON 结构时 ETag 会变。原始 CSV 的 ETag 只由文件字节决定。
+- **`ETag`。** 每个响应都带弱 ETag，例如 `W/"0.5.0-5987f5c9680ce780"`。清洗后的数据集，ETag 由服务版本号和数据内容决定：港铁文件改了、但清洗结果没变时 ETag 不变；服务升级改了 JSON 结构时 ETag 会变。原始 CSV 的 ETag 只由文件字节决定。
 - **压缩。** 清洗后的数据集和原始 CSV 在每次拉取后只编码一次：第一个请求触发序列化和 gzip（最高压缩级别），之后的请求共享同一份结果，所以下载大数据集几乎不增加服务端负担，响应也带 `Content-Length`。每次拉取后的第一个请求会多等编码的十几毫秒。是否压缩的判断与其他接口相同；响应都带 `Vary: Accept-Encoding`，供中间的缓存区分压缩和未压缩的版本。
 - **启动时。** 服务刚启动、第一次拉取还没完成时，请求会等它完成再返回。
 - **错误。** 从未成功拉取过，或最近一次成功拉取已超过新鲜期加 30 天，返回 `502 upstream_unavailable`。
@@ -763,37 +763,37 @@ curl http://127.0.0.1:3000/api/data
     {
       "name": "stations",
       "path": "/api/data/stations",
-      "revision": "0.4.1-0d1201f5804cd4cd",
+      "revision": "0.5.0-0d1201f5804cd4cd",
       "updated_at": "2023-11-21T18:09:07+08:00"
     },
     {
       "name": "fares",
       "path": "/api/data/fares",
-      "revision": "0.4.1-5987f5c9680ce780",
+      "revision": "0.5.0-5987f5c9680ce780",
       "updated_at": "2026-04-03T01:02:50+08:00"
     },
     {
       "name": "airport-express-fares",
       "path": "/api/data/airport-express-fares",
-      "revision": "0.4.1-545393302ce4c18f",
+      "revision": "0.5.0-545393302ce4c18f",
       "updated_at": "2025-06-22T01:05:16+08:00"
     },
     {
       "name": "light-rail",
       "path": "/api/data/light-rail",
-      "revision": "0.4.1-97a676332b659216",
+      "revision": "0.5.0-97a676332b659216",
       "updated_at": "2026-07-05T00:58:02+08:00"
     },
     {
       "name": "light-rail-fares",
       "path": "/api/data/light-rail-fares",
-      "revision": "0.4.1-e9deb534253c3bde",
+      "revision": "0.5.0-e9deb534253c3bde",
       "updated_at": "2024-06-30T01:39:03+08:00"
     },
     {
       "name": "accessibility",
       "path": "/api/data/accessibility",
-      "revision": "0.4.1-b199444f08da98bf",
+      "revision": "0.5.0-b199444f08da98bf",
       "updated_at": "2023-06-25T02:28:09+08:00"
     }
   ],
@@ -1045,7 +1045,7 @@ curl --compressed http://127.0.0.1:3000/api/data/fares
 
 ### 响应示例
 
-`200 OK`，响应头包含 `ETag: W/"0.4.1-5987f5c9680ce780"`。以下为节选：实际有 9120 个行程，这里只展示 2 个。
+`200 OK`，响应头包含 `ETag: W/"0.5.0-5987f5c9680ce780"`。以下为节选：实际有 9120 个行程，这里只展示 2 个。
 
 ```json
 {
