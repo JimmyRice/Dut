@@ -14,16 +14,22 @@ use crate::{error::ApiError, middleware, routes, state::AppState};
 /// Responses are gzipped for clients that accept it: the MTR fare table is
 /// about 1.7 MB of JSON and 75 KB compressed.
 ///
+/// The mock API is mounted under `/api/mock` only when the state enables
+/// it; otherwise its paths are unknown routes like any other.
+///
 /// The health check is added after tracing, so it is not traced: probes
 /// arrive every few seconds and would bury real requests in the log.
 pub fn router<N: NextTrainSource, L: LineStatusSource, R: ReferenceDataSource>(
     state: AppState<N, L, R>,
 ) -> Router {
-    let api = Router::new()
+    let mut api = Router::new()
         .merge(routes::lines::router())
         .merge(routes::line_status::router())
         .merge(routes::next_train::router())
         .merge(routes::data::router());
+    if state.mock_api() {
+        api = api.nest("/mock", routes::mock::router());
+    }
     let router = Router::new()
         .nest("/api", api)
         .fallback(not_found)

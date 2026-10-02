@@ -15,6 +15,7 @@ publish = false
 dut-api = { path = "crates/dut-api" }
 dut-core = { path = "crates/dut-core" }
 dut-http = { path = "crates/dut-http" }
+dut-mock = { path = "crates/dut-mock" }
 dut-monitor = { path = "crates/dut-monitor" }
 dut-poll = { path = "crates/dut-poll" }
 dut-telemetry = { path = "crates/dut-telemetry" }

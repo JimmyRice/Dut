@@ -145,12 +145,38 @@ impl Line {
         station: StationCode,
         direction: Direction,
     ) -> impl Iterator<Item = &'static StationCode> {
-        let profile = self.profile();
-        profile
-            .termini
+        self.termini()
             .get(direction)
             .iter()
-            .filter(move |terminus| profile.leads(station, **terminus, direction))
+            .filter(move |terminus| self.leads(station, **terminus, direction))
+    }
+
+    /// Whether a train running in `direction` from `from` can go on to `to`:
+    /// both lie on one branch, `to` beyond `from`.
+    ///
+    /// Branches are what make this more than comparing positions in
+    /// [`stations`](Self::stations): on the Tseung Kwan O Line, LOHAS Park
+    /// is listed between Tseung Kwan O and Hang Hau but lies on its own
+    /// branch.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dut_core::domain::network::{Direction, Line, StationCode};
+    ///
+    /// let tseung_kwan_o: StationCode = "TKO".parse()?;
+    /// let lohas_park: StationCode = "LHP".parse()?;
+    /// let po_lam: StationCode = "POA".parse()?;
+    /// let line = Line::TseungKwanO;
+    ///
+    /// assert!(line.leads(tseung_kwan_o, lohas_park, Direction::Up));
+    /// assert!(line.leads(tseung_kwan_o, po_lam, Direction::Up));
+    /// assert!(!line.leads(lohas_park, po_lam, Direction::Up));
+    /// assert!(line.leads(po_lam, tseung_kwan_o, Direction::Down));
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn leads(self, from: StationCode, to: StationCode, direction: Direction) -> bool {
+        self.profile().leads(from, to, direction)
     }
 
     /// Whether the Next Train API publishes arrivals for this line.

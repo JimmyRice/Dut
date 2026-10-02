@@ -10,6 +10,7 @@ workspace = true
 
 [dependencies]
 dut-core.workspace = true
+dut-mock.workspace = true
 dut-telemetry.workspace = true
 
 axum.workspace = true

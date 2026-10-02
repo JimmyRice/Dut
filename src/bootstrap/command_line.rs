@@ -3,7 +3,7 @@
 
 use std::{net::SocketAddr, path::PathBuf};
 
-use clap::{Args, Parser};
+use clap::{Args, Parser, builder::BoolishValueParser};
 
 use dut_telemetry::{LogConfig, LogFilter};
 
@@ -28,6 +28,9 @@ pub struct CommandLine {
 
     #[command(flatten)]
     logging: LoggingOptions,
+
+    #[command(flatten)]
+    development: DevelopmentOptions,
 }
 
 #[derive(Debug, Args)]
@@ -63,6 +66,21 @@ struct LoggingOptions {
     log_file: Option<PathBuf>,
 }
 
+#[derive(Debug, Args)]
+#[command(next_help_heading = "Development")]
+struct DevelopmentOptions {
+    /// Also serve simulated train arrivals and line status under /api/mock,
+    /// for developing the app against situations that are rare live, such as
+    /// a typhoon signal or a suspended line. The variable accepts true or
+    /// false, 1 or 0, yes or no, and on or off
+    #[arg(
+        long,
+        env = "DUT_MOCK_API",
+        value_parser = BoolishValueParser::new()
+    )]
+    mock_api: bool,
+}
+
 impl CommandLine {
     /// Reads the process's arguments and environment.
     ///
@@ -83,7 +101,9 @@ impl CommandLine {
 
     /// The compiled configuration, adjusted by these options.
     pub fn app_config(&self) -> AppConfig {
-        AppConfig::default().with_bind_address(self.server.bind_address)
+        AppConfig::default()
+            .with_bind_address(self.server.bind_address)
+            .with_mock_api(self.development.mock_api)
     }
 }
 
@@ -130,12 +150,15 @@ mod tests {
             "warn,dut=info",
             "--log-file",
             "/var/log/dut.log",
+            "--mock-api",
         ])
         .unwrap();
 
         assert_eq!(
             command_line.app_config(),
-            AppConfig::default().with_bind_address(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 8080)))
+            AppConfig::default()
+                .with_bind_address(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 8080)))
+                .with_mock_api(true)
         );
         assert_eq!(
             command_line.log_config(),
@@ -203,6 +226,7 @@ mod tests {
                 ("bind_address", Some(OsStr::new("DUT_BIND_ADDRESS"))),
                 ("log_level", Some(OsStr::new("RUST_LOG"))),
                 ("log_file", Some(OsStr::new("DUT_LOG_FILE"))),
+                ("mock_api", Some(OsStr::new("DUT_MOCK_API"))),
             ]
         );
     }

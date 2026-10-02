@@ -18,6 +18,7 @@ pub struct AppState<N, L, R> {
     line_status: LineStatusService<L>,
     reference_data: ReferenceDataService<R>,
     open_data_bodies: Arc<OpenDataBodies>,
+    mock_api: bool,
 }
 
 impl<N, L, R> AppState<N, L, R> {
@@ -31,7 +32,16 @@ impl<N, L, R> AppState<N, L, R> {
             line_status,
             reference_data,
             open_data_bodies: Arc::default(),
+            mock_api: false,
         }
+    }
+
+    /// Also serves simulated data under `/api/mock` when `enabled`. Riders'
+    /// apps never call it, so it is off unless the operator turns it on.
+    #[must_use]
+    pub const fn with_mock_api(mut self, enabled: bool) -> Self {
+        self.mock_api = enabled;
+        self
     }
 
     pub(crate) const fn next_trains(&self) -> &NextTrainService<N> {
@@ -49,6 +59,10 @@ impl<N, L, R> AppState<N, L, R> {
     pub(crate) fn open_data_bodies(&self) -> &OpenDataBodies {
         &self.open_data_bodies
     }
+
+    pub(crate) const fn mock_api(&self) -> bool {
+        self.mock_api
+    }
 }
 
 // Implemented by hand so that none requires the same of `N`, `L`, or `R`.
@@ -59,6 +73,7 @@ impl<N, L, R> Clone for AppState<N, L, R> {
             line_status: self.line_status.clone(),
             reference_data: self.reference_data.clone(),
             open_data_bodies: Arc::clone(&self.open_data_bodies),
+            mock_api: self.mock_api,
         }
     }
 }
@@ -71,6 +86,7 @@ impl<N, L, R> fmt::Debug for AppState<N, L, R> {
             .field("line_status", &self.line_status)
             .field("reference_data", &self.reference_data)
             .field("open_data_bodies", &self.open_data_bodies)
+            .field("mock_api", &self.mock_api)
             .finish()
     }
 }

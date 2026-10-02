@@ -28,6 +28,12 @@ pub(crate) enum ApiError {
     #[error("unknown open data file")]
     UnknownSource,
 
+    #[error("malformed or repeated query parameter")]
+    InvalidQuery,
+
+    #[error("unknown mock scenario")]
+    UnknownScenario,
+
     #[error("an upstream service is unavailable")]
     UpstreamUnavailable,
 }
@@ -52,6 +58,7 @@ impl ApiError {
             | Self::UnknownStation
             | Self::StationNotOnLine
             | Self::UnknownSource => StatusCode::NOT_FOUND,
+            Self::InvalidQuery | Self::UnknownScenario => StatusCode::BAD_REQUEST,
             Self::UpstreamUnavailable => StatusCode::BAD_GATEWAY,
         }
     }
@@ -63,6 +70,8 @@ impl ApiError {
             Self::UnknownStation => "unknown_station",
             Self::StationNotOnLine => "station_not_on_line",
             Self::UnknownSource => "unknown_source",
+            Self::InvalidQuery => "invalid_query",
+            Self::UnknownScenario => "unknown_scenario",
             Self::UpstreamUnavailable => "upstream_unavailable",
         }
     }
@@ -76,6 +85,10 @@ impl ApiError {
                 "The requested line does not serve the requested station".to_owned()
             }
             Self::UnknownSource => "No open data file matches the requested name".to_owned(),
+            Self::InvalidQuery => {
+                "The query string has a malformed or repeated parameter".to_owned()
+            }
+            Self::UnknownScenario => "No mock scenario matches the requested name".to_owned(),
             Self::UpstreamUnavailable => "An upstream service is unavailable".to_owned(),
         }
     }

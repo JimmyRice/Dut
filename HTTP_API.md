@@ -23,6 +23,11 @@ Dut 是 MTRGo App 的数据整合后端。本文档记录全部对外 HTTP 接�
 - [11. 获取轻铁车站与路线](#11-获取轻铁车站与路线)
 - [12. 获取轻铁车费](#12-获取轻铁车费)
 - [13. 获取无障碍设施](#13-获取无障碍设施)
+- [Mock 接口的共同行为](#mock-接口的共同行为)
+- [14. Mock 场景列表](#14-mock-场景列表)
+- [15. 模拟全线路服务状态](#15-模拟全线路服务状态)
+- [16. 模拟单线单站列车到站](#16-模拟单线单站列车到站)
+- [17. 模拟车站所有线路的列车到站](#17-模拟车站所有线路的列车到站)
 - [错误码](#错误码)
 - [附录 A：线路代码](#附录-a线路代码)
 - [附录 B：车站代码](#附录-b车站代码)
@@ -37,6 +42,7 @@ Dut 是 MTRGo App 的数据整合后端。本文档记录全部对外 HTTP 接�
 | Base URL | `http://127.0.0.1:3000`（本地默认值，见 `src/bootstrap/config.rs`） |
 | 路径前缀 | 所有接口都在 `/api` 下 |
 | HTTP 方法 | 目前只有 `GET`（健康检查也接受 `HEAD`） |
+| 开发用接口 | `/api/mock` 下的 Mock 接口按场景返回模拟数据，默认关闭，见 [Mock 接口的共同行为](#mock-接口的共同行为) |
 | 鉴权 | 暂无 |
 | 响应格式 | `application/json`，UTF-8。健康检查不返回响应体；开放数据原始文件返回 `text/csv` |
 | 压缩 | 请求带 `Accept-Encoding: gzip` 时，响应以 gzip 压缩 |
@@ -129,6 +135,10 @@ Dut 是 MTRGo App 的数据整合后端。本文档记录全部对外 HTTP 接�
 | `GET` | `/api/data/light-rail` | 轻铁车站和路线 | 港铁开放数据平台 |
 | `GET` | `/api/data/light-rail-fares` | 轻铁任意两站的车费 | 港铁开放数据平台 |
 | `GET` | `/api/data/accessibility` | 无障碍设施目录和各站设施 | 港铁开放数据平台 |
+| `GET` | `/api/mock/scenarios` | Mock 接口能模拟的场景（需开启 Mock 接口，下同） | 服务内置 |
+| `GET` | `/api/mock/lines/status` | 按场景模拟全线路服务状态 | 服务模拟，不访问上游 |
+| `GET` | `/api/mock/lines/{line}/stations/{station}/next-trains` | 按场景模拟单线单站列车到站 | 服务模拟，不访问上游 |
+| `GET` | `/api/mock/stations/{station}/next-trains` | 按场景模拟车站所有线路的列车到站 | 服务模拟，不访问上游 |
 
 ---
 
@@ -1408,11 +1418,501 @@ curl --compressed http://127.0.0.1:3000/api/data/accessibility
 
 ---
 
+## Mock 接口的共同行为
+
+第 14 至 17 节的 Mock 接口供 App 开发调试使用：按指定的场景返回模拟数据，例如繁忙时间、尾班车、延误、八号风球、港铁故障，不必等真实情况出现，也能随机抽取场景检查 App 的各种显示。
+
+- **默认关闭。** 用 `--mock-api` 或环境变量 `DUT_MOCK_API=true`（也接受 `1`、`yes`、`on`）开启，见 README 的"配置"。未开启时，这些路径与其他不存在的路由一样返回 `404 not_found`。乘客使用的正式部署不需要开启：App 正式版万一误调 Mock 接口，得到的是 404，而不是把模拟数据显示给乘客。
+- **与正式接口相同。** 路径就是正式接口在 `/api` 后加上 `/mock`，例如 `/api/mock/lines/status`。响应体结构、`Cache-Control`、`x-request-id`、gzip 和错误格式都与正式接口一致，所以客户端只需换路径前缀，字段说明见对应的正式接口。
+- **不访问上游。** 数据全部由服务模拟生成，港铁不可用时照样能用。
+
+### 查询参数
+
+所有 Mock 接口（场景列表除外）都接受以下两个查询参数。正式接口没有这两个参数，也会忽略它们。
+
+| 参数 | 类型 | 必填 | 说明 | 示例 |
+|---|---|---|---|---|
+| `scenario` | string | 否 | 场景名，大小写不敏感。可选值见各接口的场景表和[场景列表](#14-mock-场景列表)；`random` 表示按权重随机抽一个场景。不传等于 `random` | `typhoon_signal` |
+| `seed` | integer | 否 | 0 到 18446744073709551615 之间的整数，决定模拟出哪一组数据，见下表 | `42` |
+
+同一个 `seed` 就是同一个"模拟世界"：同一场景下的列车班次、受影响的线路和通告文字都相同。
+
+| | 不传 `seed` | 传 `seed` |
+|---|---|---|
+| 指定场景 | 使用 `0`，所以连续轮询、或在不同车站之间切换时，看到的是同一个世界 | 使用这个 `seed` |
+| `random` | 每次请求随机抽一个 `seed`，也就每次抽到不同的场景 | 由 `seed` 决定抽中哪个场景，所以可以重现 |
+
+列车按绝对时间运行：固定 `seed` 轮询时，列车会像真实数据一样逐渐接近、到站、离开，下一个车站也会在一两分钟后看到同一班车。想要另一组数据，换一个 `seed` 即可。
+
+### 响应头
+
+除参数错误（`400`、`404`）外，每个模拟响应都带这两个响应头，包括模拟出来的 `502`：
+
+| 响应头 | 说明 |
+|---|---|
+| `x-mock-scenario` | 实际模拟的场景。`scenario=random` 时是抽中的场景 |
+| `x-mock-seed` | 实际使用的 `seed` |
+
+用 `?scenario=<x-mock-scenario>&seed=<x-mock-seed>` 再请求一次，就能重现同一份数据（时间会随当前时刻推进）。
+
+### 模拟数据有多接近真实
+
+- **线路与车站**：线路、车站、支线、行车方向和 `towards` 都来自服务内置的静态资料，与正式接口完全相同。
+- **月台**：取自 2026-10-02 早上两次抓取的全部车站的港铁实时数据。包括同一车站不同线路的月台编号重复（例如美孚两条线都有 1 号月台）、换乘站的特殊编号（例如金鐘港島綫往柴灣是 3 号），以及终点站轮流使用两个月台（例如中環荃灣綫 1、2 号）。港铁在机场站返回 `1/3`、`2/4` 这样的月台，这里取第一个数字。
+- **班次**：各线按下表的班距行车，并有真实的中途折返班次：觀塘綫隔一班往何文田；將軍澳綫每三班有一班往康城，深夜康城列车只往返調景嶺；東鐵綫平时每三班有一班往落馬洲，繁忙时间每四班中一班往落馬洲、一班只到大埔墟，深夜每三班有一班只到上水；東涌綫繁忙时间每三班有一班只到青衣；機場快綫全部驶往博覽館。支线车站的班次相应较疏，例如坑口只有往寶琳的列车。
+- **时间格式**：与港铁一样，`arrival_at` 等于 `generated_at` 加整数分钟，正在月台上的列车为 0 分钟；`generated_at` 比 `fetched_at` 早 2 至 8 秒；数据每 10 秒刷新一次，`max-age` 与正式接口一样在 2 至 10 秒之间。東鐵綫在始发站（金鐘、羅湖、落馬洲）给出 `departure`，其余车站给出 `arrival`。
+- **不规则**：每班车都有少量随机偏差，但不会超越前车。`delayed` 场景下班距拉长到 1.7 倍，偏差更大，约八分之一的班次取消，所以会出现列车扎堆和长时间空档。
+- **线路状态**：线路顺序与港铁状态源相同（荃灣綫在前，轻铁在最后）。说明文字仿照港铁通告的英文写法，例如 "Due to a signalling fault at Kowloon Bay Station, Kwun Tong Line train service is delayed. Passengers please allow extra travelling time."
+
+各线班距（分钟，取整到 0.1）：
+
+| 线路 | 繁忙时间 | 非繁忙时间 | 深夜 |
+|---|---|---|---|
+| `AEL` | 10 | 10 | 12 |
+| `TCL` | 5 | 7.5 | 10 |
+| `TML` | 2.8 | 4.5 | 7.5 |
+| `TKL` | 2.3 | 4 | 6 |
+| `EAL` | 2.8 | 5 | 7.5 |
+| `SIL` | 3.3 | 4.5 | 7 |
+| `TWL` | 2.1 | 3.5 | 6 |
+| `ISL` | 2.5 | 3.5 | 6 |
+| `KTL` | 2.1 | 3.5 | 6 |
+| `DRL` | 6 | 8 | 10 |
+
+模拟数据不是时刻表：班距是概略值，与当前真实时刻无关，场景也与真实日期无关（例如非赛马日也能请求 `race_day`）。
+
+---
+
+## 14. Mock 场景列表
+
+```
+GET /api/mock/scenarios
+```
+
+列出每类 Mock 数据可以模拟的场景、说明和随机权重，方便 App 做一个开发用的场景选择菜单，不必把场景名写死。
+
+### 参数
+
+无。
+
+### 请求示例
+
+```bash
+curl http://127.0.0.1:3000/api/mock/scenarios
+```
+
+### 响应示例
+
+`200 OK`，响应头包含 `Cache-Control: public, max-age=86400`。
+
+以下为节选：`next_trains` 实际有 11 个场景，`line_status` 有 9 个，这里各展示 1 个。
+
+```json
+{
+  "next_trains": [
+    {
+      "scenario": "peak",
+      "random_weight": 3,
+      "description": {
+        "en": "Rush hour: trains every two to three minutes on most lines, some of them turning back short of the terminus.",
+        "tc": "繁忙時間：大部分綫路兩至三分鐘一班，部分班次在中途站折返。"
+      }
+    }
+  ],
+  "line_status": [
+    {
+      "scenario": "normal",
+      "random_weight": 8,
+      "description": {
+        "en": "Good service on every line.",
+        "tc": "所有綫路服務正常。"
+      }
+    }
+  ]
+}
+```
+
+### 字段说明
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `next_trains` | array | 列车到站 Mock 接口（[第 16 节](#16-模拟单线单站列车到站)、[第 17 节](#17-模拟车站所有线路的列车到站)）的场景，顺序固定 |
+| `line_status` | array | 线路状态 Mock 接口（[第 15 节](#15-模拟全线路服务状态)）的场景，顺序固定 |
+| `*[].scenario` | string | 场景名，即查询参数 `scenario` 的值 |
+| `*[].random_weight` | integer | `scenario=random` 时被抽中的相对权重。`0` 表示只能指定，不会被随机抽中 |
+| `*[].description` | object | 双语说明 `{ en, tc }`，适合直接显示在开发菜单里 |
+
+### 缓存行为
+
+场景随部署更新，响应头与[接口 1](#1-获取线路与车站资料) 一样是 `Cache-Control: public, max-age=86400`。
+
+### 错误
+
+本接口没有业务错误。未开启 Mock 接口时返回 `404 not_found`。
+
+---
+
+## 15. 模拟全线路服务状态
+
+```
+GET /api/mock/lines/status
+```
+
+按场景模拟[接口 2](#2-获取全线路服务状态) 的响应，响应体与之完全相同。受影响的线路由 `seed` 决定，可能是任何一条线，包括轻铁。
+
+### 查询参数
+
+`scenario` 和 `seed`，见[查询参数](#查询参数)。`scenario` 的可选值：
+
+| `scenario` | 模拟的情况 | 随机权重 |
+|---|---|---|
+| `normal` | 所有线路服务正常 | 8 |
+| `delayed` | 一条线 `delayed`（黄色），附港铁说明 | 3 |
+| `disrupted` | 一条线 `disrupted`（红色），部分路段暂停服务，附港铁说明 | 1 |
+| `delayed_or_disrupted` | 一条线 `delayed_or_disrupted`（港铁网站以黄色显示），附港铁说明 | 1 |
+| `typhoon_signal` | 所有线路 `typhoon_signal`，没有说明文字 | 1 |
+| `non_service_hours` | 所有线路 `non_service_hours`（灰色） | 2 |
+| `unknown_condition` | 一条线是本服务尚未识别的状态（港铁原始值 `blue`），即 `unknown`、灰色。用于检查 App 能否显示未来新增的状态 | 0 |
+| `stale` | 与 `normal` 相同，但数据是 2 至 12 分钟前的：`stale: true`、`Cache-Control: no-cache` | 1 |
+| `upstream_unavailable` | 返回 `502 upstream_unavailable` | 1 |
+
+`updated_at` 也按真实情况模拟：`normal` 和 `stale` 是当天 06:15（港铁每天开始服务时重新发布），`non_service_hours` 是 01:20，其余场景是最近一小时内的某个时刻。
+
+### 请求示例
+
+```bash
+curl -i 'http://127.0.0.1:3000/api/mock/lines/status?scenario=disrupted&seed=8'
+```
+
+### 响应示例
+
+`200 OK`，响应头包含 `Cache-Control: public, max-age=29`、`x-mock-scenario: disrupted`、`x-mock-seed: 8`。
+
+以下为节选：实际返回 11 条线路，这里只展示 3 条。
+
+```json
+{
+  "updated_at": "2026-10-02T07:04:40+08:00",
+  "fetched_at": "2026-10-02T07:50:00+08:00",
+  "stale": false,
+  "lines": [
+    {
+      "line": { "code": "TWL", "name": { "en": "Tsuen Wan Line", "tc": "荃灣綫" } },
+      "color": "#FF0000",
+      "condition": "normal",
+      "display": "green",
+      "message": null
+    },
+    {
+      "line": { "code": "KTL", "name": { "en": "Kwun Tong Line", "tc": "觀塘綫" } },
+      "color": "#1A9431",
+      "condition": "disrupted",
+      "display": "red",
+      "message": "Due to a power supply fault, Kwun Tong Line train service between Kwun Tong and Yau Tong stations is suspended. Free shuttle buses are being arranged. Passengers are advised to use other means of transport."
+    },
+    {
+      "line": { "code": "LR", "name": { "en": "Light Rail", "tc": "輕鐵" } },
+      "color": "#9F7A00",
+      "condition": "normal",
+      "display": "green",
+      "message": null
+    }
+  ]
+}
+```
+
+### 字段说明
+
+与[接口 2](#2-获取全线路服务状态) 相同。
+
+### 缓存行为
+
+与[接口 2](#2-获取全线路服务状态) 相同：数据视为每 30 秒拉取一次，`max-age` 最多 33 并随时间递减；`stale` 场景为 `no-cache`。
+
+### 错误
+
+| HTTP 状态 | `code` | 触发条件 |
+|---|---|---|
+| `400` | `unknown_scenario` | `scenario` 不是上表的场景名，也不是 `random` |
+| `400` | `invalid_query` | `seed` 不是 0 到 18446744073709551615 的整数，或某个参数出现了两次 |
+| `404` | `not_found` | 服务没有开启 Mock 接口 |
+| `502` | `upstream_unavailable` | 场景为 `upstream_unavailable` |
+
+错误请求示例：
+
+```bash
+curl 'http://127.0.0.1:3000/api/mock/lines/status?scenario=typhoon'
+```
+
+```json
+{
+  "error": {
+    "code": "unknown_scenario",
+    "message": "No mock scenario matches the requested name"
+  }
+}
+```
+
+---
+
+## 16. 模拟单线单站列车到站
+
+```
+GET /api/mock/lines/{line}/stations/{station}/next-trains
+```
+
+按场景模拟[接口 3](#3-获取单线单站列车到站) 的响应，响应体与之完全相同。延误、特别安排等事件发生在所请求的线路上。
+
+### 路径参数
+
+与[接口 3](#3-获取单线单站列车到站) 相同。
+
+### 查询参数
+
+`scenario` 和 `seed`，见[查询参数](#查询参数)。`scenario` 的可选值：
+
+| `scenario` | 模拟的情况 | 随机权重 |
+|---|---|---|
+| `peak` | 繁忙时间班次，包括中途折返的班次 | 3 |
+| `off_peak` | 非繁忙时间班次 | 4 |
+| `late_night` | 深夜班次，康城列车只往返調景嶺 | 2 |
+| `last_train` | 尾班车：部分方向只剩一两班，部分已经没有列车。每 20 分钟重演一次，所以轮询时能看到列车逐班开走 | 1 |
+| `non_service_hours` | 非服务时间：方向照常列出，`trains` 为空数组 | 1 |
+| `delayed` | 繁忙时间，事件线路 `delayed: true`，班次脱班、扎堆、部分取消 | 2 |
+| `special_arrangement` | 非繁忙时间，事件线路附港铁的特别列车服务安排通告 `alert`，列车照常列出 | 1 |
+| `race_day` | 沙田赛马日：部分东铁綫列车经马场站（`via_racecourse: true`），不停火炭站。其他日子马场站没有列车 | 1 |
+| `stale` | 非繁忙时间，数据是约 40 至 90 秒前的：`stale: true`、`Cache-Control: no-cache` | 1 |
+| `partial_outage` | 事件线路取不到数据。本接口返回 `502`；[第 17 节](#17-模拟车站所有线路的列车到站)只有这条线失败 | 1 |
+| `upstream_unavailable` | 返回 `502 upstream_unavailable` | 1 |
+
+`alert` 的内容与港铁 Next Train API 一致：
+
+```json
+{
+  "en": {
+    "message": "Special train service arrangements are now in place on this line. Please click here for more information.",
+    "url": "https://www.mtr.com.hk/alert/alert_title_wap.html"
+  },
+  "tc": {
+    "message": "此綫路現正實施特別列車服務安排，詳情請按此。",
+    "url": "https://www.mtr.com.hk/alert/alert_title_wap.html"
+  }
+}
+```
+
+### 请求示例
+
+```bash
+curl -i 'http://127.0.0.1:3000/api/mock/lines/EAL/stations/SHT/next-trains?scenario=peak&seed=2'
+```
+
+### 响应示例
+
+`200 OK`，响应头包含 `Cache-Control: public, max-age=7`、`x-mock-scenario: peak`、`x-mock-seed: 2`。
+
+以下为节选：`down` 实际有 4 班车，这里只展示 1 班。`up` 的最后一班是只到大埔墟的中途折返班次。
+
+```json
+{
+  "line": { "code": "EAL", "name": { "en": "East Rail Line", "tc": "東鐵綫" } },
+  "station": { "code": "SHT", "name": { "en": "Sha Tin", "tc": "沙田" } },
+  "generated_at": "2026-10-02T07:50:04+08:00",
+  "fetched_at": "2026-10-02T07:50:10+08:00",
+  "stale": false,
+  "delayed": false,
+  "alert": null,
+  "directions": [
+    {
+      "direction": "up",
+      "towards": [
+        { "code": "LOW", "name": { "en": "Lo Wu", "tc": "羅湖" } },
+        { "code": "LMC", "name": { "en": "Lok Ma Chau", "tc": "落馬洲" } }
+      ],
+      "trains": [
+        {
+          "destination": { "code": "LMC", "name": { "en": "Lok Ma Chau", "tc": "落馬洲" } },
+          "platform": 2,
+          "arrival_at": "2026-10-02T07:52:04+08:00",
+          "time_type": "arrival",
+          "via_racecourse": false
+        },
+        {
+          "destination": { "code": "LOW", "name": { "en": "Lo Wu", "tc": "羅湖" } },
+          "platform": 2,
+          "arrival_at": "2026-10-02T07:55:04+08:00",
+          "time_type": "arrival",
+          "via_racecourse": false
+        },
+        {
+          "destination": { "code": "LOW", "name": { "en": "Lo Wu", "tc": "羅湖" } },
+          "platform": 2,
+          "arrival_at": "2026-10-02T07:58:04+08:00",
+          "time_type": "arrival",
+          "via_racecourse": false
+        },
+        {
+          "destination": { "code": "TAP", "name": { "en": "Tai Po Market", "tc": "大埔墟" } },
+          "platform": 2,
+          "arrival_at": "2026-10-02T08:00:04+08:00",
+          "time_type": "arrival",
+          "via_racecourse": false
+        }
+      ]
+    },
+    {
+      "direction": "down",
+      "towards": [
+        { "code": "ADM", "name": { "en": "Admiralty", "tc": "金鐘" } }
+      ],
+      "trains": [
+        {
+          "destination": { "code": "ADM", "name": { "en": "Admiralty", "tc": "金鐘" } },
+          "platform": 3,
+          "arrival_at": "2026-10-02T07:50:04+08:00",
+          "time_type": "arrival",
+          "via_racecourse": false
+        }
+      ]
+    }
+  ]
+}
+```
+
+### 字段说明
+
+与[接口 3](#3-获取单线单站列车到站) 相同。
+
+### 缓存行为
+
+与[接口 3](#3-获取单线单站列车到站) 相同：数据视为每 10 秒刷新一次，`max-age` 在 2 至 10 秒之间；`stale` 场景为 `no-cache`。轮询间隔可以照样用 `max-age`。
+
+### 错误
+
+| HTTP 状态 | `code` | 触发条件 |
+|---|---|---|
+| `400` | `unknown_scenario` | `scenario` 不是上表的场景名，也不是 `random` |
+| `400` | `invalid_query` | `seed` 不是 0 到 18446744073709551615 的整数，或某个参数出现了两次 |
+| `404` | `not_found` | 服务没有开启 Mock 接口 |
+| `404` | `unknown_line`、`unknown_station`、`station_not_on_line` | 与[接口 3](#3-获取单线单站列车到站) 相同，先于查询参数检查 |
+| `502` | `upstream_unavailable` | 场景为 `partial_outage` 或 `upstream_unavailable` |
+
+错误请求示例（响应头包含 `x-mock-scenario: upstream_unavailable`、`x-mock-seed: 0`，不带 `Cache-Control`）：
+
+```bash
+curl -i 'http://127.0.0.1:3000/api/mock/lines/TKL/stations/TKO/next-trains?scenario=upstream_unavailable'
+```
+
+```json
+{
+  "error": {
+    "code": "upstream_unavailable",
+    "message": "An upstream service is unavailable"
+  }
+}
+```
+
+---
+
+## 17. 模拟车站所有线路的列车到站
+
+```
+GET /api/mock/stations/{station}/next-trains
+```
+
+按场景模拟[接口 4](#4-获取车站所有线路的列车到站) 的响应，响应体与之完全相同。场景、班次和月台与[第 16 节](#16-模拟单线单站列车到站)相同；延误、特别安排、`partial_outage` 这类事件只发生在途经该站的其中一条线上（由 `seed` 决定），因为真实事件很少同时影响所有线路。在只有一条线的车站，`partial_outage` 等于所有线路失败，返回 `502`。
+
+### 路径参数
+
+与[接口 4](#4-获取车站所有线路的列车到站) 相同。
+
+### 查询参数
+
+`scenario` 和 `seed`，见[查询参数](#查询参数)。`scenario` 的可选值与[第 16 节](#16-模拟单线单站列车到站)相同。
+
+### 请求示例
+
+```bash
+curl -i 'http://127.0.0.1:3000/api/mock/stations/ADM/next-trains?scenario=partial_outage'
+```
+
+### 响应示例
+
+`200 OK`，响应头包含 `Cache-Control: public, max-age=6`、`x-mock-scenario: partial_outage`、`x-mock-seed: 0`。
+
+以下为节选：实际返回 EAL、SIL、TWL、ISL 四条线，这里只展示 EAL（只保留 1 班车）和失败的 TWL。
+
+```json
+{
+  "station": { "code": "ADM", "name": { "en": "Admiralty", "tc": "金鐘" } },
+  "lines": [
+    {
+      "line": { "code": "EAL", "name": { "en": "East Rail Line", "tc": "東鐵綫" } },
+      "board": {
+        "generated_at": "2026-10-02T07:49:57+08:00",
+        "fetched_at": "2026-10-02T07:50:00+08:00",
+        "stale": false,
+        "delayed": false,
+        "alert": null,
+        "directions": [
+          {
+            "direction": "up",
+            "towards": [
+              { "code": "LOW", "name": { "en": "Lo Wu", "tc": "羅湖" } },
+              { "code": "LMC", "name": { "en": "Lok Ma Chau", "tc": "落馬洲" } }
+            ],
+            "trains": [
+              {
+                "destination": { "code": "LOW", "name": { "en": "Lo Wu", "tc": "羅湖" } },
+                "platform": 7,
+                "arrival_at": "2026-10-02T07:53:57+08:00",
+                "time_type": "departure",
+                "via_racecourse": false
+              }
+            ]
+          }
+        ]
+      },
+      "error": null
+    },
+    {
+      "line": { "code": "TWL", "name": { "en": "Tsuen Wan Line", "tc": "荃灣綫" } },
+      "board": null,
+      "error": {
+        "code": "upstream_unavailable",
+        "message": "An upstream service is unavailable"
+      }
+    }
+  ]
+}
+```
+
+### 字段说明
+
+与[接口 4](#4-获取车站所有线路的列车到站) 相同。
+
+### 缓存行为
+
+与[接口 4](#4-获取车站所有线路的列车到站) 相同。
+
+### 错误
+
+| HTTP 状态 | `code` | 触发条件 |
+|---|---|---|
+| `400` | `unknown_scenario` | `scenario` 不是[第 16 节](#16-模拟单线单站列车到站)的场景名，也不是 `random` |
+| `400` | `invalid_query` | `seed` 不是 0 到 18446744073709551615 的整数，或某个参数出现了两次 |
+| `404` | `not_found` | 服务没有开启 Mock 接口 |
+| `404` | `unknown_station` | 与[接口 4](#4-获取车站所有线路的列车到站) 相同，先于查询参数检查 |
+| `502` | `upstream_unavailable` | 场景为 `upstream_unavailable`，或在只有一条线的车站为 `partial_outage` |
+
+---
+
 ## 错误码
 
 | HTTP 状态 | `code` | 说明 |
 |---|---|---|
-| `404` | `not_found` | 路由不存在，例如 `GET /api/nope` |
+| `400` | `invalid_query` | 查询参数格式错误或重复，目前只有 Mock 接口读取查询参数 |
+| `400` | `unknown_scenario` | Mock 场景名不存在 |
+| `404` | `not_found` | 路由不存在，例如 `GET /api/nope`；未开启 Mock 接口时的 `/api/mock/*` 也是如此 |
 | `404` | `unknown_line` | 线路代码不存在 |
 | `404` | `unknown_station` | 车站代码格式错误或车站不存在 |
 | `404` | `station_not_on_line` | 线路不经过该车站 |
@@ -1462,6 +1962,7 @@ curl --compressed http://127.0.0.1:3000/api/data/accessibility
 
 | 日期 | 变更 |
 |---|---|
+| 2026-10-02 | 新增 Mock 接口，供 App 开发调试：`GET /api/mock/scenarios`、`GET /api/mock/lines/status`、`GET /api/mock/lines/{line}/stations/{station}/next-trains`、`GET /api/mock/stations/{station}/next-trains`。按 `scenario`（或 `random`）和 `seed` 查询参数返回与正式接口结构相同的模拟数据，响应头带 `x-mock-scenario` 和 `x-mock-seed`。默认关闭，用 `--mock-api` 或 `DUT_MOCK_API` 开启。新增错误码 `400 invalid_query`、`400 unknown_scenario`。正式接口不变。 |
 | 2026-10-01 | 开放数据的数据集（`GET /api/data/stations` 等 6 个）和原始文件（`GET /api/data/sources/{file}`）改为每次拉取只编码一次、所有请求共享，gzip 改用最高压缩级别：`/api/data/fares` 从约 75 KB 降到约 71 KB。响应改带 `Content-Length` 和 `Vary: Accept-Encoding`。解压后的内容、`ETag` 和 `Cache-Control` 不变。 |
 | 2026-09-29 | 新增港铁开放数据接口：`GET /api/data`（索引）、`GET /api/data/sources/{file}`（原样的 CSV 文件）、`GET /api/data/stations`、`GET /api/data/fares`、`GET /api/data/airport-express-fares`、`GET /api/data/light-rail`、`GET /api/data/light-rail-fares`、`GET /api/data/accessibility`。数据每天拉取一次，响应带 `ETag`，支持 `If-None-Match` 返回 `304`；车费以港仙整数表示。所有响应在客户端接受时以 gzip 压缩。新增错误码 `404 unknown_source`。 |
 | 2026-09-29 | 新增 `GET /api/health` 健康检查：返回 `200`、空响应体和 `Cache-Control: no-store`，不访问上游，不记入请求日志。 |

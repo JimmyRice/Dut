@@ -6,6 +6,7 @@ pub(crate) mod fares;
 mod light_rail;
 mod line_status;
 mod lines;
+mod mock;
 mod next_train;
 mod published_stations;
 
@@ -15,5 +16,6 @@ pub(crate) use error_response::{ErrorDetail, ErrorResponse};
 pub(crate) use light_rail::LightRailResponse;
 pub(crate) use line_status::LineStatusResponse;
 pub(crate) use lines::LinesResponse;
+pub(crate) use mock::{MockQuery, ScenariosResponse};
 pub(crate) use next_train::{NextTrainResponse, StationBoardsResponse};
 pub(crate) use published_stations::PublishedStationsResponse;

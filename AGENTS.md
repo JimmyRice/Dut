@@ -12,6 +12,9 @@ These rules apply to contributors and coding agents working in this repository.
 - Put all outbound HTTP, MTR API, cache, and persistence code in the
   infrastructure crates: the shared client in `dut-http`, adapters and caches
   in `dut-upstream`.
+- Put simulated data for the mock API in `dut-mock`, which performs no I/O.
+  A change to a real endpoint's response must keep its mock counterpart's
+  response the same shape.
 - Put Axum extractors, status codes, headers, and request/response DTOs in
   `dut-api` only.
 - Construct concrete dependencies only in `bootstrap` (`src/bootstrap`); share

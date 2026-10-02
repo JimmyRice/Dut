@@ -96,12 +96,14 @@ const NEXT_TRAIN_CACHE: CachePolicy = CachePolicy {
     failure_backoff: Duration::from_secs(5),
 };
 
-/// Settings for one server process. The default listens on localhost and
-/// reads the live upstreams; the command line can change where it listens,
-/// and tests swap the endpoints for a fake upstream.
+/// Settings for one server process. The default listens on localhost,
+/// reads the live upstreams, and serves no mock API; the command line can
+/// change where it listens and turn the mock API on, and tests swap the
+/// endpoints for a fake upstream.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AppConfig {
     bind_address: SocketAddr,
+    mock_api: bool,
     outbound_http_timeout: Duration,
     outbound_proxy: ProxyMode,
     mtr: MtrConfig,
@@ -167,6 +169,14 @@ impl AppConfig {
         self
     }
 
+    /// Also serves simulated data under `/api/mock` when `enabled`, for
+    /// developing the app against situations that are rare live.
+    #[must_use]
+    pub const fn with_mock_api(mut self, enabled: bool) -> Self {
+        self.mock_api = enabled;
+        self
+    }
+
     /// Connects to upstreams directly, ignoring any proxy the environment or
     /// the operating system configures. Tests use it to reach a fake upstream
     /// on this machine.
@@ -183,6 +193,10 @@ impl AppConfig {
 
     pub(crate) const fn bind_address(&self) -> SocketAddr {
         self.bind_address
+    }
+
+    pub(crate) const fn mock_api(&self) -> bool {
+        self.mock_api
     }
 
     pub(crate) const fn outbound_http_timeout(&self) -> Duration {
@@ -210,6 +224,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             bind_address: DEFAULT_BIND_ADDRESS,
+            mock_api: false,
             outbound_http_timeout: DEFAULT_HTTP_TIMEOUT,
             outbound_proxy: ProxyMode::System,
             mtr: MtrConfig {
@@ -246,6 +261,12 @@ mod tests {
             config.bind_address(),
             SocketAddr::from((Ipv4Addr::LOCALHOST, 3000))
         );
+    }
+
+    #[test]
+    fn serves_no_mock_api_unless_told_to() {
+        assert!(!AppConfig::default().mock_api());
+        assert!(AppConfig::default().with_mock_api(true).mock_api());
     }
 
     #[test]
