@@ -1,0 +1,93 @@
+// Debug with F5, or run without the debugger with ⌃F5. Every configuration
+// uses CodeLLDB, which builds with Cargo before it starts. To debug a single
+// test, use the Debug button above it or in the Testing view instead.
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // The integrated terminal gives the server a TTY, so its logs keep
+      // their colours and stay grouped per request, as in a terminal.
+      "name": "dut",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["build", "--package=dut", "--bin=dut"],
+        "filter": { "name": "dut", "kind": "bin" }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "terminal": "integrated",
+      "sourceLanguages": ["rust"]
+    },
+    {
+      "name": "dut with mock API",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["build", "--package=dut", "--bin=dut"],
+        "filter": { "name": "dut", "kind": "bin" }
+      },
+      "args": ["--mock-api"],
+      "cwd": "${workspaceFolder}",
+      "terminal": "integrated",
+      "sourceLanguages": ["rust"]
+    },
+    {
+      "name": "route tests",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["test", "--no-run", "--package=dut", "--test=api"],
+        "filter": { "name": "api", "kind": "test" }
+      },
+      "args": ["${input:testFilter}"],
+      "cwd": "${workspaceFolder}",
+      "sourceLanguages": ["rust"]
+    },
+    {
+      "name": "unit tests in a crate",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["test", "--no-run", "--lib", "--package=${input:crate}"],
+        "filter": { "kind": "lib" }
+      },
+      "args": ["${input:testFilter}"],
+      "cwd": "${workspaceFolder}",
+      "sourceLanguages": ["rust"]
+    },
+    {
+      // For a dut started by a run task, such as one serving a phone.
+      "name": "attach to dut",
+      "type": "lldb",
+      "request": "attach",
+      "program": "${workspaceFolder}/target/debug/dut",
+      "sourceLanguages": ["rust"]
+    }
+  ],
+  "inputs": [
+    {
+      "id": "testFilter",
+      "type": "promptString",
+      "description": "Run only the tests whose names contain this; leave empty for all",
+      "default": ""
+    },
+    {
+      "id": "crate",
+      "type": "pickString",
+      "description": "Crate whose unit tests to debug",
+      "options": [
+        "dut",
+        "dut-api",
+        "dut-core",
+        "dut-http",
+        "dut-mock",
+        "dut-monitor",
+        "dut-poll",
+        "dut-telemetry",
+        "dut-upstream"
+      ],
+      "default": "dut-core"
+    }
+  ]
+}

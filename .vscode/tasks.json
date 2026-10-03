@@ -1,0 +1,199 @@
+// Run with "Tasks: Run Task". ⇧⌘B builds, and "Tasks: Run Test Task" runs
+// every test. Labels start with what the task is for, so the list groups
+// itself.
+{
+  "version": "2.0.0",
+  "tasks": [
+    // The checks AGENTS.md requires before a change is complete.
+    {
+      "label": "check: all",
+      "detail": "fmt, clippy, and test, stopping at the first that fails",
+      "dependsOn": ["check: fmt", "check: clippy", "check: test"],
+      "dependsOrder": "sequence",
+      "problemMatcher": []
+    },
+    {
+      "label": "check: fmt",
+      "detail": "cargo fmt -- --check",
+      "type": "shell",
+      "command": "cargo",
+      "args": ["fmt", "--", "--check"],
+      "problemMatcher": [],
+      "presentation": { "clear": true }
+    },
+    {
+      "label": "check: clippy",
+      "detail": "cargo clippy --all-targets --all-features -- -D warnings",
+      "type": "shell",
+      "command": "cargo",
+      "args": ["clippy", "--all-targets", "--all-features", "--", "-D", "warnings"],
+      "problemMatcher": ["$rustc"],
+      "presentation": { "clear": true }
+    },
+    {
+      // Without --no-fail-fast, the first test binary that fails hides how
+      // the crates after it fare.
+      "label": "check: test",
+      "detail": "cargo test --no-fail-fast",
+      "type": "shell",
+      "command": "cargo",
+      "args": ["test", "--no-fail-fast"],
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": ["$rustc", "$rust-panic"],
+      "presentation": { "clear": true }
+    },
+
+    {
+      "label": "test: one crate",
+      "detail": "cargo test -p <crate>",
+      "type": "shell",
+      "command": "cargo",
+      "args": ["test", "--no-fail-fast", "-p", "${input:crate}"],
+      "group": "test",
+      "problemMatcher": ["$rustc", "$rust-panic"],
+      "presentation": { "clear": true }
+    },
+    {
+      // A macOS terminal allows a process 256 open files, while a shell
+      // started some other way may allow a million. Each route test holds
+      // about a dozen, so run them under the lower limit after adding route
+      // tests, background pollers, or outbound connections.
+      "label": "test: under 256 open files",
+      "detail": "ulimit -n 256 && cargo test --no-fail-fast",
+      "type": "shell",
+      "command": "ulimit -n 256 && cargo test --no-fail-fast",
+      "group": "test",
+      "problemMatcher": ["$rustc", "$rust-panic"],
+      "presentation": { "clear": true }
+    },
+
+    {
+      "label": "build: debug",
+      "detail": "cargo build",
+      "type": "shell",
+      "command": "cargo",
+      "args": ["build"],
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "build: dist",
+      "detail": "The binary that releases and the container image ship, in target/dist/dut",
+      "type": "shell",
+      "command": "cargo",
+      "args": ["build", "--profile", "dist", "--locked", "--bin", "dut"],
+      "group": "build",
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      // Apple Silicon pads segments to 16 KB pages, so the file size hides
+      // small changes. Compare these section totals before and after adding
+      // a dependency instead.
+      "label": "build: dist size",
+      "detail": "Section totals of target/dist/dut (macOS)",
+      "type": "shell",
+      "command": "size -m target/dist/dut | awk '/^Segment/ { segment = $2; sub(\":\", \"\", segment) } /^\\ttotal/ { printf \"%-14s %9d\\n\", segment, $2; sum += $2 } END { printf \"%-14s %9d bytes\\n\", \"sections\", sum }'",
+      "dependsOn": "build: dist",
+      "problemMatcher": []
+    },
+
+    // Each server task gets its own terminal, so the logs keep their colours
+    // and stay grouped per request. Running one again offers to restart it.
+    {
+      "label": "run: dut",
+      "detail": "cargo run, serving http://127.0.0.1:3000",
+      "type": "shell",
+      "command": "cargo",
+      "args": ["run"],
+      "problemMatcher": ["$rustc"],
+      "presentation": { "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "run: dut with mock API",
+      "detail": "cargo run -- --mock-api, adding /api/mock",
+      "type": "shell",
+      "command": "cargo",
+      "args": ["run", "--", "--mock-api"],
+      "problemMatcher": ["$rustc"],
+      "presentation": { "panel": "dedicated", "clear": true }
+    },
+    {
+      // A phone cannot reach this Mac's 127.0.0.1, so this listens on every
+      // interface. The iOS Simulator and Android emulator need only the tasks
+      // above.
+      "label": "run: dut with mock API for a phone on the LAN",
+      "detail": "cargo run -- --mock-api --bind-address 0.0.0.0:3000",
+      "type": "shell",
+      "command": "cargo",
+      "args": ["run", "--", "--mock-api", "--bind-address", "0.0.0.0:3000"],
+      "problemMatcher": ["$rustc"],
+      "presentation": { "panel": "dedicated", "clear": true }
+    },
+
+    // When the daily open data read logs that stations differ from the
+    // compiled network, start one of the run tasks first, then these.
+    {
+      "label": "network: compare with open data",
+      "detail": "python3 scripts/sync-network.py (needs a running dut)",
+      "type": "shell",
+      "command": "python3",
+      "args": ["scripts/sync-network.py"],
+      "problemMatcher": [],
+      "presentation": { "clear": true }
+    },
+    {
+      "label": "network: regenerate the station table",
+      "detail": "python3 scripts/sync-network.py --write, then cargo fmt; review the diff and run the checks",
+      "type": "shell",
+      "command": "python3 scripts/sync-network.py --write; cargo fmt",
+      "problemMatcher": [],
+      "presentation": { "clear": true }
+    },
+
+    {
+      "label": "docker: build image",
+      "detail": "docker build -t dut .",
+      "type": "shell",
+      "command": "docker",
+      "args": ["build", "-t", "dut", "."],
+      "problemMatcher": []
+    },
+    {
+      "label": "docker: run image",
+      "detail": "docker run --rm -p 3000:3000 dut",
+      "type": "shell",
+      "command": "docker",
+      "args": ["run", "--rm", "-p", "3000:3000", "dut"],
+      "problemMatcher": [],
+      "presentation": { "panel": "dedicated", "clear": true }
+    },
+
+    {
+      "label": "doc: open",
+      "detail": "cargo doc --no-deps --open, for every crate in the workspace",
+      "type": "shell",
+      "command": "cargo",
+      "args": ["doc", "--no-deps", "--open"],
+      "problemMatcher": ["$rustc"]
+    }
+  ],
+  "inputs": [
+    {
+      "id": "crate",
+      "type": "pickString",
+      "description": "Crate to test",
+      "options": [
+        "dut",
+        "dut-api",
+        "dut-core",
+        "dut-http",
+        "dut-mock",
+        "dut-monitor",
+        "dut-poll",
+        "dut-telemetry",
+        "dut-upstream"
+      ],
+      "default": "dut-core"
+    }
+  ]
+}

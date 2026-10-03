@@ -1,0 +1,61 @@
+// The shapes AGENTS.md asks for, as snippets for Rust files. Type the prefix
+// and press Tab to move between the placeholders.
+{
+  "Route test": {
+    "scope": "rust",
+    "prefix": "routetest",
+    "description": "A route-level test covering status, content type, and response body",
+    "body": [
+      "#[tokio::test]",
+      "async fn ${1:name}() {",
+      "\tlet app = TestApp::start().await;",
+      "",
+      "\tlet response = app.get(\"${2:/api/}\").await;",
+      "",
+      "\tresponse.assert_json(StatusCode::${3:OK});",
+      "\tassert_eq!(response.body, json!(${4:{\\}}));",
+      "}"
+    ]
+  },
+  "Test with paused time": {
+    "scope": "rust",
+    "prefix": "pausedtest",
+    "description": "A Tokio test whose clock advances only when every task waits, for timing behaviour",
+    "body": [
+      "#[tokio::test(start_paused = true)]",
+      "async fn ${1:name}() {",
+      "\t$0",
+      "}"
+    ]
+  },
+  "Async trait method": {
+    "scope": "rust",
+    "prefix": "asyncfn",
+    "description": "An async method on a public trait whose future callers can rely on being Send",
+    "body": [
+      "/// ${3:Why it exists.}",
+      "fn ${1:name}(&self) -> impl Future<Output = ${2:()}> + Send;"
+    ]
+  },
+  "Layer error type": {
+    "scope": "rust",
+    "prefix": "errorenum",
+    "description": "A thiserror error type for one layer",
+    "body": [
+      "/// ${1:Why this layer can fail.}",
+      "#[derive(Debug, Error)]",
+      "pub enum ${2:Name}Error {",
+      "\t#[error(\"${3:what went wrong}\")]",
+      "\t${4:Variant},",
+      "}"
+    ]
+  },
+  "Log an error": {
+    "scope": "rust",
+    "prefix": "logerror",
+    "description": "A tracing event that records an error with its whole source chain",
+    "body": [
+      "${1|warn,error,debug,info|}!(error = &${2:error} as &dyn Error, \"${3:message}\");"
+    ]
+  }
+}

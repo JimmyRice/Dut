@@ -1,0 +1,53 @@
+// Workspace settings shared by everyone who works on Dut. Personal
+// preferences, such as the theme or inlay hints, belong in user settings
+// instead.
+{
+  // Lint as the required checks do, so a clippy warning shows in the editor
+  // before `cargo clippy --all-targets --all-features -- -D warnings` fails on
+  // it. rust-analyzer already checks every target.
+  "rust-analyzer.check.command": "clippy",
+  "rust-analyzer.cargo.features": "all",
+
+  // Build into target/rust-analyzer, so a check on save never holds the lock
+  // on target/debug that `cargo test` or `cargo run` in a task or terminal is
+  // waiting for. The price is a second copy of the build artefacts.
+  "rust-analyzer.cargo.targetDir": true,
+
+  // List tests in the Testing view, with run and debug buttons for each.
+  // Another Rust test adapter would list every test a second time.
+  "rust-analyzer.testExplorer": true,
+
+  // rustfmt is the only formatter the project enforces. Every other file is
+  // laid out by hand, such as the feature list in Cargo.toml and the comments
+  // in the workflows, so saving must not reformat it.
+  "editor.formatOnSave": false,
+  "[rust]": {
+    "editor.defaultFormatter": "rust-lang.rust-analyzer",
+    "editor.formatOnSave": true
+  },
+
+  "files.insertFinalNewline": true,
+  "files.trimFinalNewlines": true,
+  "files.trimTrailingWhitespace": true,
+
+  "files.readonlyInclude": {
+    // Fixtures are captured upstream responses, kept byte for byte. The open
+    // data CSV files mix CRLF line endings with bare LFs inside quoted
+    // fields, which saving in the editor would normalise. To trim one on
+    // purpose, run "File: Toggle Active Editor Read-only in Session".
+    "tests/fixtures/**": true,
+    // Dependency and standard library sources that go-to-definition opens:
+    // an edit there would change every build that uses them.
+    "**/.cargo/registry/src/**/*.rs": true,
+    "**/.cargo/git/checkouts/**/*.rs": true,
+    "**/lib/rustlib/src/rust/library/**/*.rs": true
+  },
+
+  "files.watcherExclude": {
+    "**/target/**": true
+  },
+
+  // master keeps a linear history, so a sync rebases local commits onto what
+  // it pulls instead of merging.
+  "git.rebaseWhenSync": true
+}

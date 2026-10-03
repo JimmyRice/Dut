@@ -1,0 +1,20 @@
+// The extensions that the settings, tasks, and launch configurations here rely
+// on. VS Code offers to install them when the project is opened.
+{
+  "recommendations": [
+    // Language server; runs clippy on save and fills the Testing view.
+    "rust-lang.rust-analyzer",
+    // CodeLLDB, the debugger every launch configuration uses.
+    "vadimcn.vscode-lldb",
+    // Cargo.toml: syntax, schema, and completion.
+    "tamasfe.even-better-toml",
+    // Cargo.toml: marks dependencies with newer versions.
+    "fill-labs.dependi",
+    // .github/workflows: schema, action versions, and run history.
+    "github.vscode-github-actions",
+    // .github/dependabot.yml, checked against its schema.
+    "redhat.vscode-yaml",
+    // Dockerfile and local containers.
+    "ms-azuretools.vscode-containers"
+  ]
+}
