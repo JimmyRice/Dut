@@ -117,6 +117,9 @@ Run all of these before completing a change:
 cargo fmt -- --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
+cargo deny check advisories bans sources
 ```
+
+The `cargo-deny` check does not cover licences (see `deny.toml`); CI runs the same command on every push and pull request.
 
 See `ARCHITECTURE.md` for the dependency direction and feature workflow.
