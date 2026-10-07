@@ -1,54 +1,56 @@
 # Rust API
 
-This is the reference for writing business logic inside Dut: the domain
-types to work with, the services to call, and the traits to implement. It is
-written for people and coding agents alike, so every item names the crate and
-module it lives in.
+[English](RUST_API.md) · [繁體粵語](docs/zh-HK/RUST_API.md) · [简体中文](docs/zh-CN/RUST_API.md)
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) explains how the layers fit and why.
-- [AGENTS.md](AGENTS.md) lists the rules every change must follow.
-- [HTTP_API.md](HTTP_API.md) documents the HTTP endpoints for app clients.
+Use this reference when writing business logic in Dut: which domain types to pass around, which services to call, and which traits to implement. Concrete production dependencies are constructed in `src/bootstrap/app.rs`. Update this document and its translations whenever a business-facing trait, handle, event, or entry point changes.
 
-When a public trait, handle, or entry point described here changes, update
-this file in the same change.
+## Contents
 
-The snippets in this file are not compiled. The doc comments on
-`Subscriber`, `Feed`, `dut_poll::spawn`, `Line::towards`, `Line::leads`,
-`StationCode`, `Fare`, `Platforms`, and `HONG_KONG` carry examples that `cargo test`
-compiles and runs, and `cargo doc --open` shows. When the two disagree, the doc comment is
-right and this file needs updating.
+- [Where to start](#where-to-start)
+- [Application ports](#ports)
+- [Reading data](#reading-data)
+- [Monitor and events](#monitor)
+- [Domain vocabulary](#domain-vocabulary)
+- [Outbound HTTP](#outbound-http)
+- [Upstream adapters](#upstream-adapters)
+- [Simulated data](#simulated-data)
+- [Errors, telemetry, and tests](#conventions)
+
+Read [HTTP_API.md](HTTP_API.md) for client contracts, [RUST_API.md](RUST_API.md) for business-facing types, [ARCHITECTURE.md](ARCHITECTURE.md) for design decisions, and [AGENTS.md](AGENTS.md) for contribution rules.
+
+Markdown snippets are reference fragments, not a compiled program. Rustdoc examples on the public types are compiled by `cargo test`; view them with `cargo doc --open`. Keep signatures aligned with source. Adapter sketches that introduce new source IDs require corresponding domain changes before they compile.
+
+<a id="where-to-start"></a>
 
 ## Where to start
 
-| I want to… | Use | Crate |
+| Task | Entry point |
+| --- | --- |
+| React to a change | [`Subscriber`](#subscriber) + `MonitorHandle::attach` |
+| Read a polled value | [`FeedHandle::snapshot`](#feedhandle) |
+| Read train boards | [`NextTrainService`](#nexttrainservice) |
+| Read reference datasets/files | [`ReferenceDataService`](#referencedataservice) |
+| Add a background document | [`Feed`](#feed) + `dut_poll::spawn` |
+| Fetch over HTTP | [`OutboundHttpClient::fetch`](#outbound-http) |
+| Model railway concepts | [`dut_core::domain`](#domain-vocabulary) |
+| Add startup options | `CommandLine`; [configuration](ARCHITECTURE.md#configuration) |
+| Simulate an incident | [`dut-mock`](#simulated-data) |
+
+<a id="ports"></a>
+
+## Application ports
+
+| Trait | Purpose | Implementations |
 | --- | --- | --- |
-| React to a change (a line disrupted, a warning issued, service ending) | Implement [`Subscriber`](#subscriber), attach with `MonitorHandle::attach` | `dut-core`, `dut-monitor` |
-| Read the current line status, weather warnings, or another polled feed | [`FeedHandle::snapshot`](#feedhandle) | `dut-poll` |
-| Look up Next Train boards | [`NextTrainService`](#nexttrainservice) | `dut-core` |
-| Read MTR open data: stations, fares, Light Rail, barrier-free facilities | [`ReferenceDataService`](#referencedataservice) | `dut-core` |
-| Read a new upstream document in the background | Implement [`Feed`](#feed), start it with `dut_poll::spawn` | `dut-core`, `dut-upstream`, `dut-poll` |
-| Call an upstream over HTTP | [`OutboundHttpClient::fetch`](#outbound-http) | `dut-http` |
-| Work with lines, stations, directions, bilingual names | [Domain vocabulary](#domain-vocabulary) | `dut-core` |
-| Let an operator set something at startup, such as a credential | Add an option to a group in `CommandLine`, see ARCHITECTURE.md "Configuration" | `dut` (bootstrap) |
-| Simulate Next Train boards or line status in a scenario, or add a scenario | [Simulated data](#simulated-data) | `dut-mock` |
+| `Subscriber` | Consume monitor events | `EventLog` |
+| `Feed` | Fetch a whole document without caching | `MtrLineStatusFeed`, `HkoWarningFeed`, `MtrOpenDataFeed`, `NextTrainSignalFeed` |
+| `NextTrainSource` | Provide board snapshots | `MtrNextTrainSource`; private mock source |
+| `LineStatusSource` | Provide network status snapshots | `FeedHandle<NetworkStatus>` |
+| `ReferenceDataSource` | Provide a complete reference snapshot | `FeedHandle<ReferenceData>` |
 
-Everything is constructed once, in `src/bootstrap/app.rs`, and nowhere else.
-Business logic receives what it needs from there.
+Public async ports declare `fn … -> impl Future<Output = …> + Send`. Implementations can use `async fn`; the compiler verifies the future is Send. Prefer generic/static dispatch. Add a trait at a real seam with a concrete implementation and a test double, not for a possible future consumer.
 
-## Traits you implement
-
-| Trait | Implement it to | Existing implementations | Wired in |
-| --- | --- | --- | --- |
-| [`Subscriber`](#subscriber) | React to monitor events | `EventLog` (dut-monitor) | `monitor.attach(..)` in bootstrap |
-| [`Feed`](#feed) | Read a whole upstream document on a schedule | `MtrLineStatusFeed`, `HkoWarningFeed`, `NextTrainSignalFeed` | `dut_poll::spawn(..)` in bootstrap |
-| `NextTrainSource` | Supply Next Train boards to `NextTrainService` | `MtrNextTrainSource`; a private source in `dut-mock` behind `SimulatedNextTrains` | `NextTrainService::new(..)` |
-| `LineStatusSource` | Supply line status to `LineStatusService` | `FeedHandle<NetworkStatus>` | `LineStatusService::new(..)` |
-| `ReferenceDataSource` | Supply MTR open data to `ReferenceDataService` | `FeedHandle<ReferenceData>` | `ReferenceDataService::new(..)` |
-
-Async trait methods are declared as
-`fn name(..) -> impl Future<Output = ..> + Send`, so callers can rely on
-`Send` futures. Implementations may still write `async fn name(..)`; the
-compiler checks that the future is `Send`.
+<a id="subscriber"></a>
 
 ### Subscriber
 
@@ -58,26 +60,13 @@ compiler checks that the future is `Send`.
 pub trait Subscriber: Send + 'static {
     const NAME: &'static str;
     fn on_event(&mut self, event: &MonitorEvent) -> impl Future<Output = ()> + Send;
-    fn on_lagged(&mut self, missed: u64) -> impl Future<Output = ()> + Send; // default: does nothing
+    fn on_lagged(&mut self, missed: u64) -> impl Future<Output = ()> + Send;
 }
 ```
 
-- Each attached subscriber runs in **its own Tokio task** and receives every
-  event **in the order it was published**, one at a time. A slow subscriber
-  delays only itself.
-- State lives in `&mut self`. No `Mutex` is needed, and a `std::sync` lock
-  must never be held across `.await`.
-- `NAME` appears as the `subscriber` field of every log line from its task.
-- Events are **not replayed**. A subscriber attached late misses what came
-  before, so attach every subscriber in bootstrap, right after
-  `dut_monitor::spawn`.
-- A subscriber that falls more than 256 events behind loses the oldest ones.
-  `on_lagged(missed)` is then called before delivery resumes; override it to
-  resynchronise from the feeds' latest values if a missed change matters.
-- The trait lives in `dut-core`, so an implementation depends on `dut-core`
-  only, never on `dut-monitor`.
+Each subscriber runs in its own Tokio task and processes events one at a time in publication order. State belongs in `&mut self`; never hold a std lock across await. `NAME` labels its log span. Attach during bootstrap because events are not replayed. The broadcast capacity is 256; `on_lagged` defaults to no action, so override it to resynchronise if loss matters.
 
-Example: notice when a line ends service for the night.
+Example: recognise the transition from normal service to the end of service. Keep the decision pure and the state change in `on_event`.
 
 ```rust
 use dut_core::{
@@ -120,14 +109,14 @@ fn service_ended(event: &MonitorEvent) -> Option<Line> {
 }
 ```
 
-Wire it in `src/bootstrap/app.rs`:
+Attach in bootstrap, immediately after starting the monitor:
 
 ```rust
 let monitor = dut_monitor::spawn(&line_status, &weather_warnings, &next_train_signals);
 monitor.attach(ServiceEnds::default());
 ```
 
-Test the decision logic by building an event by hand:
+A focused test can build the event without running the monitor. In the following fragment, import `LineStatus`, `LineStatusChange`, and `jiff::Timestamp` in addition to the imports above:
 
 ```rust
 let event = MonitorEvent {
@@ -140,9 +129,7 @@ let event = MonitorEvent {
 assert_eq!(service_ended(&event), Some(Line::KwunTong));
 ```
 
-Keep the decision (what to do about an event) in pure functions like
-`service_ended`, and the side effects (sending, storing) in `on_event`. The
-planned push notifications follow the same split.
+<a id="feed"></a>
 
 ### Feed
 
@@ -156,16 +143,9 @@ pub trait Feed: Send + Sync + 'static {
 }
 ```
 
-- `fetch` reads the **whole document afresh** every call. The feed holds no
-  cache: `dut-poll` decides how often to call it and keeps the latest value.
-- `SOURCE` names the feed in logs and in `SourceHealth` events. A new feed
-  adds a variant to `SourceId` in `dut_core::domain::source_health`.
-- Return domain types, not wire DTOs. Decode into a DTO inside the adapter
-  and convert explicitly.
-- Map adapter errors with `SourceUnavailable::new(error)`. The cause is
-  logged, never shown to API clients.
+Fetch the whole document afresh on each call; the poller owns timing and the latest value. Decode transport DTOs in `dut-upstream`, convert explicitly into domain types, and wrap adapter errors with `SourceUnavailable::new(error)`. `SOURCE` identifies the feed in logs and health events. A new source needs a `SourceId` variant before its adapter can compile.
 
-Sketch of a new adapter in `dut-upstream`, following `hko/warnings/feed.rs`:
+Adapter sketch (the `Example*` types and variant are placeholders):
 
 ```rust
 #[derive(Clone, Debug)]
@@ -185,268 +165,235 @@ impl Feed for ExampleFeed {
 }
 ```
 
-Wire it in bootstrap with a `Schedule` constant from `src/bootstrap/config.rs`:
-
 ```rust
 let example = dut_poll::spawn(example_feed, polling.example);
 ```
 
-To also publish its changes as events:
+To monitor a new document, add and unit-test its `changes_since`, add a `Change` variant, extend `dut_monitor::spawn` and its watcher wiring, and add an event-log arm. Polling alone does not publish domain changes.
 
-1. Add `ExampleDocument::changes_since(&self, previous: &Self) -> Vec<..>` in
-   `dut-core`, with unit tests.
-2. Add a `Change` variant in `dut_core::domain::event`.
-3. Pass the new `FeedHandle` to `dut_monitor::spawn` and add one
-   `spawn_watch` call for it in `dut-monitor/src/monitor.rs`.
-4. Add a log arm in `dut-monitor/src/event_log.rs`.
+<a id="source-ports"></a>
+
+### Source signatures
+
+```rust
+pub trait NextTrainSource: Send + Sync + 'static {
+    fn board(&self, line: Line, station: StationCode)
+        -> impl Future<Output = Result<Snapshot<NextTrainBoard>, SourceUnavailable>> + Send;
+}
+
+pub trait LineStatusSource: Send + Sync + 'static {
+    fn status(&self)
+        -> impl Future<Output = Result<Snapshot<NetworkStatus>, SourceUnavailable>> + Send;
+}
+
+pub trait ReferenceDataSource: Send + Sync + 'static {
+    fn reference_data(&self)
+        -> impl Future<Output = Result<Snapshot<ReferenceData>, SourceUnavailable>> + Send;
+}
+```
+
+<a id="reading-data"></a>
 
 ## Reading data
 
-### Snapshot and freshness
+<a id="snapshot"></a>
+
+### Snapshots and freshness
 
 `dut_core::application::source`
 
-| Item | Meaning |
+| Item | Behaviour |
 | --- | --- |
-| `Snapshot<T>` | A shared (`Arc`) value with `value()`, `fetched_at()` (when this service received it), and `freshness()` |
-| `Freshness::Fresh { expires_in }` | Current; may be reused for `expires_in` |
-| `Freshness::Stale` | Past its freshness, served because upstream failed. `is_stale()` checks it; `combine` takes the stalest of two |
-| `SourceUnavailable` | No usable data, fresh or stale. Its cause is for logs only |
+| `Snapshot<T>` | Shared Arc value: `value()`, `fetched_at()`, `freshness()` |
+| `Freshness::Fresh { expires_in }` | Reusable for remaining duration |
+| `Freshness::Stale` | Expired fallback; `is_stale()` checks it, `combine` selects the stalest/shortest-lived input |
+| `SourceUnavailable` | No usable value; causes are for logs, not clients |
 
-### FeedHandle
+<a id="feedhandle"></a>
 
-`dut_poll::FeedHandle<T>`, returned by `dut_poll::spawn`. Cloning is cheap.
+### FeedHandle and Schedule
 
-| Method | Use it to |
+`dut_poll::spawn(feed, schedule) -> FeedHandle<F::Item>` starts a feed in a Tokio runtime. Cloning the handle is cheap.
+
+| Method / field | Contract |
 | --- | --- |
-| `snapshot().await -> Result<Snapshot<T>, SourceUnavailable>` | Read the current value with its freshness. Waits for the first poll if it has not finished |
-| `subscribe() -> watch::Receiver<FeedState<T>>` | Be woken after every poll, successful or not. Keeps only the latest state, not history |
-| `source() -> SourceId` | Name the feed |
+| `snapshot().await -> Result<Snapshot<T>, SourceUnavailable>` | Current snapshot; bounded wait while the first poll is pending |
+| `subscribe() -> watch::Receiver<FeedState<T>>` | Notified after each attempt; latest state only |
+| `source() -> SourceId` | Stable source identity |
+| `FeedState<T>` | `latest() -> Option<&Polled<T>>`, `health()`, `attempts()` |
+| `Polled<T>` | `value() -> &Arc<T>`, `fetched_at()` |
+| `Schedule` | `interval`, `first_poll_after`, `retry_after`, `fresh_for`, `stale_if_error`, `blind_after`: all Duration |
 
-`FeedState<T>` exposes `latest() -> Option<&Polled<T>>`, `health()`, and
-`attempts()`. `Polled<T>` exposes `value() -> &Arc<T>` and `fetched_at()`.
-Borrow a `watch` value only briefly: a poll cannot publish while a borrow is
-held.
+Borrow a watch value briefly; holding it prevents the poller from publishing. `FeedHandle<NetworkStatus>` implements `LineStatusSource`, and `FeedHandle<ReferenceData>` implements `ReferenceDataSource`. `retry_after` below the interval retries sooner after failure; at or above the interval keeps the normal schedule. Defaults are in [polled feeds](ARCHITECTURE.md#polled-feeds).
 
-`FeedHandle<NetworkStatus>` implements `LineStatusSource`, which is how the
-line status endpoint serves the polled value. `FeedHandle<ReferenceData>`
-implements `ReferenceDataSource` the same way for the open data endpoints.
-
-`dut_poll::Schedule` sets `interval`, `first_poll_after`, `retry_after`,
-`fresh_for`, `stale_if_error`, and `blind_after`; see "Polled feeds" in
-ARCHITECTURE.md. A `retry_after` shorter than `interval` polls again that soon
-after a failure; set it equal to `interval` to keep the regular schedule.
-
-### ReferenceDataService
-
-`dut_core::application::reference_data::ReferenceDataService<S>`, cheap to
-clone.
-
-```rust
-let snapshot = service.reference_data().await?; // Snapshot<ReferenceData>
-let data = snapshot.value();
-let fare = data.fares.value().get(from, to);     // Option<&RailFares>
-let csv = data.files.get(SourceFile::LinesFares); // &PublishedFile
-```
-
-Every dataset and file in one `ReferenceData` comes from the same poll, so
-they agree with each other. See [reference](#reference) for the types.
+<a id="nexttrainservice"></a>
 
 ### NextTrainService
 
-`dut_core::application::next_train::NextTrainService<S>`, cheap to clone.
+`dut_core::application::next_train::NextTrainService<S>`
 
-| Method | Returns |
+| Call | Result |
 | --- | --- |
-| `board(line, station).await` | `Result<BoardView, NextTrainError>` for one line at one station |
-| `station_boards(station).await` | `Result<StationBoards, NextTrainError>` for every line at a station; one failing line does not hide the others |
+| `new(source: S) -> Self` | Shares a source through Arc |
+| `board(line, station).await` | `Result<BoardView, NextTrainError>` |
+| `station_boards(station).await` | `Result<StationBoards, NextTrainError>` |
 
-- The line and station are validated against the static network before any
-  upstream call, so a cache key never comes from free-form input.
-- `BoardView` hides trains that departed more than 30 seconds ago
-  (`DEPARTED_GRACE`): use `board()`, `upcoming(direction)`, and
-  `directions()`.
-- `NextTrainError` is `UnknownStation`, `StationNotOnLine`, or
-  `Unavailable(SourceUnavailable)`.
-- Boards are cached per line and station, so asking for a board a rider has
-  just requested costs no upstream call.
+Validation uses the compiled network before reading a source, bounding cache keys. Station boards fetch concurrently and keep per-line failures; the call fails only if no line succeeds. `BoardView` exposes `board()`, `snapshot()`, `upcoming(direction)`, and `directions()`, filtering departures more than 30 seconds old. `StationBoards` exposes `station()`, `lines()`, and `freshness()`; each `LineBoard` has `line` and `board: Result<BoardView, SourceUnavailable>`. Errors are `UnknownStation(StationCode)`, `StationNotOnLine { line, station }`, or `Unavailable(SourceUnavailable)`.
 
-`LineStatusService::status().await` returns `Snapshot<NetworkStatus>` the
-same way.
+<a id="referencedataservice"></a>
 
-## Monitor
+### ReferenceDataService and LineStatusService
 
-`dut-monitor`
+`dut_core::application::reference_data::ReferenceDataService<S>::reference_data().await` returns `Result<Snapshot<ReferenceData>, SourceUnavailable>`. All datasets and source files belong to one successful poll. `dut_core::application::line_status::LineStatusService<S>::status().await` returns `Result<Snapshot<NetworkStatus>, SourceUnavailable>`. Both are created with `new(source)` and are cheap to clone.
 
-| Item | Purpose |
+```rust
+let snapshot = service.reference_data().await?;
+let data = snapshot.value();
+let fare = data.fares.value().get(from, to);
+let csv = data.files.get(SourceFile::LinesFares);
+```
+
+<a id="monitor"></a>
+
+## Monitor and events
+
+| Entry point | Contract |
 | --- | --- |
-| `dut_monitor::spawn(&line_status, &weather_warnings, &next_train_signals) -> MonitorHandle` | Starts one watcher task per feed and attaches the event log |
-| `MonitorHandle::attach(subscriber)` | Runs a [`Subscriber`](#subscriber) in its own task. The usual way in |
-| `MonitorHandle::subscribe() -> broadcast::Receiver<MonitorEvent>` | A raw receiver for a caller that runs its own loop and handles `RecvError::Lagged` and `Closed` itself |
-| `NextTrainSignalFeed::new(next_trains)` | The `Feed` that samples one mid-line station per line |
+| `dut_monitor::spawn(&line_status, &weather_warnings, &next_train_signals) -> MonitorHandle` | One watcher per feed, event logger attached first |
+| `MonitorHandle::attach<S: Subscriber>(&self, subscriber: S)` | Spawn serial subscriber delivery in its own task |
+| `MonitorHandle::subscribe() -> broadcast::Receiver<MonitorEvent>` | Raw receive loop must handle Lagged and Closed |
+| `NextTrainSignalFeed::new(next_trains)` | Sample one mid-line station per supported line |
 
-What subscribers can rely on:
+`dut_core::domain::event::MonitorEvent { observed_at: Timestamp, change: Change }` records facts. The first successful data poll emits no data changes; health transitions may emit. Failed polls preserve data and can only change source health. Per-feed observation order is preserved. Only one deployment role should run event side effects; role selection is not yet a CLI feature.
 
-- **Facts, not judgements.** Every change is published, routine ones included.
-  Severity, thresholds, and filtering are the subscriber's job.
-- **Baseline.** A feed's first successful poll publishes no data events, so a
-  restart never replays the current state as news. Read `FeedHandle::snapshot`
-  for the state at startup.
-- **Outages.** A failed poll changes no data. It shows only as a
-  `SourceHealth` event, never as service resuming or a warning cancelled.
-- **Order.** Events from one feed arrive in the order they were observed.
-- **One instance.** Only one process should run the monitor and its
-  subscribers.
+| Change | Payload / trigger |
+| --- | --- |
+| `LineStatus(LineStatusChange)` | Previous/current LineStatus; condition or message changes, including end of service |
+| `WeatherWarning(WarningChange)` | Issued, Changed { previous, current }, Cancelled; warning level/update time changes |
+| `NextTrainSignal(SignalChange)` | Line/station, previous/current signal; delay flag or notice changes |
+| `SourceHealth(HealthChange)` | Source, previous/current HealthState, including Starting→Healthy |
 
-### Events
-
-`dut_core::domain::event::MonitorEvent { observed_at: Timestamp, change: Change }`
-
-| `Change` variant | Payload | Published when |
-| --- | --- | --- |
-| `LineStatus(LineStatusChange)` | `previous` and `current` `LineStatus` | A line's condition or message changes, including `Normal` ↔ `NonServiceHours` |
-| `WeatherWarning(WarningChange)` | `Issued(ActiveWarning)`, `Changed { previous, current }`, or `Cancelled(ActiveWarning)` | The Observatory issues, changes (level or update time), or cancels a warning |
-| `NextTrainSignal(SignalChange)` | `line`, `station`, `previous` and `current` `NextTrainSignal` | A sampled board's delay flag or special arrangement notice changes |
-| `SourceHealth(HealthChange)` | `source`, `previous` and `current` `HealthState` | A source turns `Healthy`, `Failing`, or `Blind` |
+<a id="domain-vocabulary"></a>
 
 ## Domain vocabulary
 
-All in `dut_core::domain`. Parse raw input once at the boundary, then pass
-these types around.
+All modules below live under `dut_core::domain`. Parse input once at the boundary and pass typed values through business code.
+
+<a id="network"></a>
 
 ### network
 
-| Item | Notes |
+| Type | Use |
 | --- | --- |
-| `Line` | `AirportExpress`, `TungChung`, … `LightRail`. `"tkl".parse::<Line>()` is case-insensitive; `code()`, `name()`, `color()`, `stations()`, `termini()`, `towards(station, direction)`, `leads(from, to, direction)` (on one branch, `to` beyond `from`), `serves(station)`, `Line::serving(station)`, `Line::with_next_train()`, `Line::ALL` |
-| `StationCode` | Three uppercase letters, `Copy`. `"tko".parse::<StationCode>()` at runtime; `StationCode::from_static("TKO")` only in `const` items, where a bad literal fails the build |
-| `Station` | `Station::find(code)` returns the known station with its bilingual `name`; `Station::all()` lists them by code |
-| `Direction`, `ByDirection<T>` | `Up`/`Down` as the Next Train API defines them per line; `ByDirection::get(direction)` |
+| `Line` | Case-insensitive parse, `code()`, `name()`, `color()`, `stations()`, `termini()`, `towards(station, direction)`, `leads(from, to, direction)`, `serves(station)`, `Line::serving(station)`, `Line::with_next_train()`, `Line::ALL`. `leads` requires a shared branch and a destination beyond the origin. |
+| `StationCode` | Copy newtype, three uppercase letters. Runtime: `"tko".parse::<StationCode>()`; constants: `StationCode::from_static("TKO")`. Invalid static literals fail const evaluation. |
+| `Station` | `find(code)` validates membership and provides names; `all()` is code-sorted |
+| `Direction`, `ByDirection<T>` | MTR Up/Down; `ByDirection::get(direction)` |
 
-A valid `StationCode` is not necessarily a known station: check with
-`Station::find` or `Line::serves`.
+A syntactically valid station code can still be unknown. Check `Station::find` or `Line::serves`. `scripts/sync-network.py --write` regenerates `STATIONS` between GENERATED markers; line layouts, branches, and termini are reviewed by hand in `line.rs`.
 
-The `STATIONS` table in `network/station.rs` sits between `GENERATED`
-markers: `scripts/sync-network.py --write` regenerates it from MTR open data
-through a running service. Line layouts and termini in `network/line.rs` are
-maintained by hand.
+<a id="reference"></a>
 
 ### reference
 
-`dut_core::domain::reference`: MTR open data, read by `MtrOpenDataFeed`.
-
-| Item | Notes |
+| Type | Contract |
 | --- | --- |
-| `ReferenceData` | One poll's worth: `files: BySourceFile<PublishedFile>` and one `Dataset` per cleaned dataset (`stations`, `fares`, `airport_express_fares`, `light_rail`, `light_rail_fares`, `accessibility`) |
-| `Dataset<T>` | `value()`, `revision()`, `updated_at()` (upstream `Last-Modified`). `Dataset::new(value, updated_at)` derives the revision from the value's `Hash` |
-| `Revision` | Deterministic FNV-1a hash; `Revision::of(&value)`, `Revision::of_bytes(bytes)`; `Display` is 16 hex digits |
-| `SourceFile`, `BySourceFile<T>` | The seven portal files; `file_name()`, `FromStr` from the file name, `SourceFile::ALL`. `BySourceFile::get(file)`, `from_fn`, `map` |
-| `PublishedFile` | A file byte for byte: `body() -> &Arc<[u8]>`, `updated_at()`, `revision()` |
-| `Fare` | Whole Hong Kong cents; `"4.90".parse::<Fare>()` gives 490, `cents()` |
-| `FareTable<K, F>`, `Trip<K, F>` | Fares keyed by origin and destination, `StationCode` or `StopId`; `get(from, to)`, `trips()`. Drops same-stop trips |
-| `RailFares` | `octopus: OctopusFares` and `single_journey: SingleJourneyFares`, shared by MTR and Light Rail |
-| `AirportExpressFares` | `octopus` and `single_journey`, each `AdultAndChildFares` |
-| `PublishedNetwork` | Stations and `Route`s (`line`, `direction`, `stations`) as open data lists them; `drift()` compares them with the compiled network, returning `NetworkDrift`s |
-| `LightRailNetwork` | `stops: Vec<Stop>` (`StopId`, `StopCode`, name) and `routes: Vec<LightRailRoute>` (`RouteNumber`, stops per direction); `stop(id)`, `routes_serving(id)` |
-| `Accessibility` | `categories: Vec<FacilityGroup>` (`FacilityCategory`, name, `Facility`s) and `stations: Vec<StationAccessibility>` (provided `StationFacility`s with an optional `location`) |
+| `ReferenceData` | One successful poll: `files: BySourceFile<PublishedFile>` and `Dataset`s for stations, fares, airport_express_fares, light_rail, light_rail_fares, accessibility |
+| `Dataset<T>` | `new(value, updated_at)` hashes the value; `value()`, `revision()`, `updated_at()` |
+| `Revision` | Deterministic FNV-1a: `of(&value)`, `of_bytes(bytes)`, Display as 16 hex digits |
+| `SourceFile`, `BySourceFile<T>` | Seven bounded source files: `file_name()`, FromStr, ALL; container `get(file)`, `from_fn`, `try_from_fn` |
+| `PublishedFile` | Original `body() -> &Arc<[u8]>`, `updated_at()`, `revision()` |
+| `Fare` | Whole cents; `"4.90".parse::<Fare>()` is 490, `cents()`, `from_cents()` |
+| `FareTable<K, F>`, `Trip<K, F>` | Origin/destination lookup via `get(from, to)`, sorted `trips()`; same-stop trips discarded |
+| `RailFares` | `octopus: OctopusFares`, `single_journey: SingleJourneyFares`; shared by heavy rail and Light Rail |
+| `AirportExpressFares` | Octopus/single journey each use `AdultAndChildFares` |
+| `PublishedNetwork` | Published stations and Routes (line, direction, stations); `station(code)`, `drift() -> Vec<NetworkDrift>` |
+| `LightRailNetwork` | Stops (StopId, StopCode, name) and LightRailRoutes (RouteNumber, directional stops); `stop(id)`, `routes_serving(id)` |
+| `Accessibility` | FacilityGroups (category, name, facilities) and StationAccessibility entries (provided StationFacility values, optional location) |
 
-`StopCode` and `StationCode` are separate types on purpose: Light Rail stop
-codes are assigned independently of station codes.
+`StopCode` and `StationCode` are intentionally separate: Light Rail and heavy rail use independent code systems.
 
-### Everything else
+<a id="other-domain-types"></a>
 
-| Module | Items |
+### Other domain types
+
+| Module | Types / behaviour |
 | --- | --- |
-| `localized` | `Localized<T> { en, tc }` for anything published in English and Traditional Chinese |
-| `time` | `HONG_KONG`, the fixed UTC+8 offset. Times are `jiff::Timestamp`; show them with `display_with_offset(HONG_KONG)` |
-| `line_status` | `LineCondition` (`Normal`, `Delayed`, `Disrupted`, `DelayedOrDisrupted`, `NonServiceHours`, `TyphoonSignal`, `Unknown(String)`) with `display_color()`; `LineStatus`; `NetworkStatus::changes_since` |
-| `next_train` | `NextTrainBoard` with `signal()`; `TrainArrival` (absolute `arrival_at`, never a countdown; `platforms`); `Platforms`, `Copy`: usually `Platforms::one(n)`, `Platforms::pair(1, 3)` at Airport where trains open their doors on both sides, `Platforms::NONE` when unreadable. `"1/3".parse::<Platforms>()`, `as_slice()`; `AlertNotice`; `NextTrainSignal`; `NextTrainSignals::changes_since` |
-| `weather` | `WeatherWarning` (every Observatory warning, including `TropicalCyclone(CycloneSignal)`, `PreNo8Announcement`, `Rainstorm(RainstormLevel)`, and `Unrecognised(String)`); `ActiveWarning`; `WeatherWarnings::changes_since` |
-| `source_health` | `SourceId` (`MtrLineStatus`, `MtrNextTrain`, `HkoWarnings`, `MtrOpenData`), `HealthState`, `HealthChange` |
+| `localized` | `Localized<T> { en, tc }` |
+| `time` | `HONG_KONG` fixed UTC+8; jiff Timestamp, `display_with_offset(HONG_KONG)` |
+| `line_status` | LineCondition: Normal, Delayed, Disrupted, DelayedOrDisrupted, NonServiceHours, TyphoonSignal, Unknown(String); `display_color()`; LineStatus; `NetworkStatus::changes_since` |
+| `next_train` | NextTrainBoard `signal()`; TrainArrival absolute times; Platforms is Copy with `one(n)`, `pair(1, 3)`, NONE, `"1/3".parse()`, `as_slice()`; AlertNotice; NextTrainSignal; `NextTrainSignals::changes_since` |
+| `weather` | WeatherWarning includes TropicalCyclone(CycloneSignal), PreNo8Announcement, Rainstorm(RainstormLevel), Unrecognised(String), and other HKO warnings; ActiveWarning; `WeatherWarnings::changes_since` |
+| `source_health` | SourceId: MtrLineStatus, MtrNextTrain, HkoWarnings, MtrOpenData; HealthState: Starting, Healthy, Failing, Blind; HealthChange |
 
-An unrecognised upstream value is kept verbatim (`Unknown`, `Unrecognised`)
-and logged, rather than failing the whole document. Likewise, a train whose
-platform is unreadable keeps its place on the board with `Platforms::NONE`.
+Unknown upstream values remain in `Unknown`/`Unrecognised` and are logged rather than invalidating a whole document. Unreadable platforms become `Platforms::NONE`; the train stays on the board.
+
+<a id="outbound-http"></a>
 
 ## Outbound HTTP
 
-`dut-http`. The process shares one client; never build a `reqwest::Client`
-yourself.
+Use `dut-http` and the shared connection pool; never build a client per request. Bootstrap calls `dut_http::build(user_agent, timeout, proxy) -> Result<OutboundHttpClient, reqwest::Error>`. `ProxyMode::System` uses environment/system proxies; `Direct` bypasses them for tests.
 
-| Item | Purpose |
+| Call / type | Contract |
 | --- | --- |
-| `OutboundHttpClient::fetch(UpstreamRequest).await` | Sends a `GET`, reads the body, and logs start, finish (status, latency, size, caching headers), or failure. Non-2xx is an error |
-| `UpstreamRequest { upstream, url, timeout }` | `upstream` is a short stable log name such as `hko.warnings` |
-| `UpstreamResponse::json::<T>()` | Decodes the body, logging an excerpt if it is not the expected JSON |
-| `UpstreamResponse::ttl_hint()` | Upstream's remaining freshness from `Cache-Control` and `Age` |
-| `UpstreamResponse::last_modified()` | When upstream says the document last changed, from `Last-Modified` |
-| `UpstreamResponse::body()` | The raw body, for documents that are not JSON, such as CSV |
-| `UpstreamError` | `Transport` or `Status`; wrap it in the adapter's own error type |
+| `fetch(UpstreamRequest).await -> Result<UpstreamResponse, UpstreamError>` | GET, read whole body, log start/finish/failure; non-2xx is an error |
+| `UpstreamRequest { upstream, url, timeout }` | Stable log name, URL, per-request timeout |
+| `json::<T>() -> Result<T, serde_json::Error>` | Decode with diagnostic excerpt on failure |
+| `ttl_hint() -> Option<Duration>` | Remaining upstream max-age minus Age |
+| `last_modified() -> Option<Timestamp>` | Parsed Last-Modified |
+| `body() -> &Bytes` | Original response bytes |
+| `UpstreamError` | Transport or Status; wrap in the adapter’s own error |
 
-Bootstrap builds the client with `dut_http::build(user_agent, timeout, proxy)`
-and hands clones to adapters.
+<a id="upstream-adapters"></a>
 
 ## Upstream adapters
 
-`dut-upstream`
+`dut-upstream`; constructor arguments below are call shapes. Pass the shared client and bootstrap’s endpoint/timeouts.
 
-| Item | Kind |
+| Constructor / type | Role |
 | --- | --- |
-| `mtr::next_train::MtrNextTrainSource::new(http, endpoint, timeout, CachePolicy)` | `NextTrainSource`, cached per line and station |
+| `mtr::next_train::MtrNextTrainSource::new(http, endpoint, timeout, CachePolicy)` | Cached NextTrainSource per line/station |
 | `mtr::line_status::MtrLineStatusFeed::new(http, endpoint, timeout)` | `Feed<Item = NetworkStatus>` |
 | `hko::warnings::HkoWarningFeed::new(http, endpoint, timeout)` | `Feed<Item = WeatherWarnings>` |
-| `mtr::open_data::MtrOpenDataFeed::new(http, &base_url, timeout)?` | `Feed<Item = ReferenceData>`: reads the seven portal files in one poll, one after another over one connection, and cleans them. `base_url` ends in `/` |
-| `connectivity::ConnectivityCheck::new(http, probes)` | Probes every upstream once at startup and logs the outcome |
-| `connectivity::Probe::json(request)`, `Probe::csv(request)` | A probe and the document a real answer is, so a captive portal's HTML page counts as unreachable |
-| `CachePolicy` | Freshness, stale-while-revalidate, stale-if-error, and backoff for request-driven caches |
+| `mtr::open_data::MtrOpenDataFeed::new(http, &base_url, timeout)?` | Feed<Item = ReferenceData>; seven sequential downloads; URL ends with / |
+| `connectivity::ConnectivityCheck::new(http, probes)` | One startup probe per upstream |
+| `connectivity::Probe::json(request)`, `Probe::csv(request)` | Validate the expected format, rejecting captive-portal HTML |
+| `CachePolicy` | default_ttl, ttl_floor, ttl_ceiling, stale_while_revalidate, stale_if_error, failure_backoff |
 
-Every adapter offers `probe()`, the `Probe` the connectivity check sends.
-`RefreshingCache` is private to `dut-upstream`.
+Adapters expose `probe()` for bootstrap’s connectivity check. `RefreshingCache` remains private to `dut-upstream`.
+
+<a id="simulated-data"></a>
 
 ## Simulated data
 
-`dut-mock` simulates what the mock API serves under `/api/mock`. It performs
-no I/O and returns the same domain types as the real sources, so the mock
-routes reuse the real DTOs. ARCHITECTURE.md "Mock API" explains the design.
+`dut-mock` performs no I/O and returns the same domain values as real sources. Mock routes can therefore reuse real DTOs and application services. See [the mock design](ARCHITECTURE.md#mock-api).
 
-| Item | Purpose |
+| Type | Use |
 | --- | --- |
-| `Scenario` | Implemented by `BoardScenario` and `StatusScenario`: `ALL`, `USUAL`, `name()` (the `?scenario=` value), `description()` (`Localized`), `random_weight()` |
-| `ScenarioChoice<S>` | `Random` or `Named(S)`, parsed case-insensitively from `random` or a name (`UnknownScenario` otherwise). `resolve(Option<Seed>) -> (S, Seed)`: a named scenario without a seed uses `Seed::DEFAULT`; `random` draws a fresh seed and picks a scenario by weight from it |
-| `Seed` | Picks one simulated world: `Seed::new(u64)`, `Seed::DEFAULT`, `Seed::fresh()`, `value()` |
-| `SimulatedNextTrains::new(scenario, seed)` | `board(line, station).await` and `station_boards(station).await`, with the same results and errors as `NextTrainService`, which they run on a simulated `NextTrainSource`. An incident affects the requested line, or one line of the station chosen by the seed |
-| `SimulatedLineStatus::new(scenario, seed)` | `status() -> Result<Snapshot<NetworkStatus>, SourceUnavailable>`, as the polled feed would hold it now |
+| `Scenario` | BoardScenario/StatusScenario implement ALL, USUAL, name(), description(), random_weight() |
+| `ScenarioChoice<S>` | Random or Named(S); case-insensitive parsing, UnknownScenario on failure. `resolve(Option<Seed>) -> (S, Seed)` |
+| `Seed` | new(u64), DEFAULT (0), fresh(), value(); named defaults to DEFAULT, random without seed generates a new one |
+| `SimulatedNextTrains::new(scenario, seed)` | board(line, station).await and station_boards(station).await use NextTrainService; incidents select the requested line or one serving line |
+| `SimulatedLineStatus::new(scenario, seed)` | `status() -> Result<Snapshot<NetworkStatus>, SourceUnavailable>` |
 
 ```rust
-let (scenario, seed) = "peak".parse::<ScenarioChoice<BoardScenario>>()?.resolve(None);
+let (scenario, seed) = "peak"
+    .parse::<ScenarioChoice<BoardScenario>>()?
+    .resolve(None);
 let view = SimulatedNextTrains::new(scenario, seed)
     .board(Line::EastRail, "SHT".parse()?)
-    .await?; // BoardView, as NextTrainService::board returns
+    .await?;
 ```
 
-To add a scenario, add a variant to `BoardScenario` or `StatusScenario`
-with its name, description, and weight, decide its conditions in
-`board::Conditions::of` or `network_status`, and document it in
-HTTP_API.md. To follow a change in how the MTR runs a line, edit its
-`Timetable` in `timetable.rs` and its platforms in `platforms.rs`; the unit
-tests compare both with the capture in
-`tests/fixtures/mtr/next_train_network.json`, which can be replaced by a new
-capture of every board.
+Add scenarios to BoardScenario or StatusScenario with names, descriptions, and weights; implement their conditions in `board::Conditions::of` or `network_status`, then document them in HTTP_API. Update line timetables/platforms against `tests/fixtures/mtr/next_train_network.json`; tests compare the simulation with that capture.
 
-## Telemetry and conventions
+<a id="conventions"></a>
 
-- `dut_telemetry::millis(duration)` formats durations for log fields.
-- Log with structured fields (`line = %line`), and record errors as
-  `error = &err as &dyn Error` so their source chain is printed.
-- Each layer has its own `thiserror` error type. No `unwrap`, `expect`, or
-  `panic!` outside tests and `const` evaluation.
-- An error's message leaves out its cause, which `#[source]` returns, so a
-  logged error or a failed start prints each cause once. Write
-  `#[error("failed to bind the HTTP server to {address}")]`, not
-  `"…: {source}"`.
-- Implement `Clone` and `Debug` by hand on generic wrappers, so they do not
-  demand the same of their type parameters.
-- Tests are offline and deterministic: paused Tokio time for timing, `wiremock`
-  for upstreams, fixtures from real responses in `tests/fixtures`.
+## Errors, telemetry, and tests
 
-See [AGENTS.md](AGENTS.md) for the complete rules and required checks.
+- Each layer owns a `thiserror` error type. Keep the source chain in `#[source]`; do not repeat the cause inside the error message. API clients receive `ApiError` mappings, never upstream details.
+- Use structured tracing fields, such as `line = %line` and `error = &err as &dyn Error`; `dut_telemetry::millis(duration)` formats durations. Never log secrets.
+- Generic wrappers implement Clone/Debug by hand when derives would require unnecessary bounds. Share immutable values through Arc.
+- Do not block the runtime or hold a std lock across await. No unwrap, expect, or panic outside tests and compile-time const evaluation.
+- Test non-trivial domain/application rules with unit tests. Timing tests use paused Tokio time; upstream tests use wiremock and real captured fixtures. Route tests assert status, content type, and body.
+- Run fmt, Clippy with warnings denied, and cargo test before completion; [AGENTS.md](AGENTS.md) is the complete rule set.
