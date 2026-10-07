@@ -1,8 +1,6 @@
-use std::{fmt, str::FromStr};
-
 use thiserror::Error;
 
-use crate::domain::{localized::Localized, network::StationCode};
+use crate::domain::{localized::Localized, network::StationCode, string_enum::string_enum};
 
 /// Expands to a static slice of station codes, validated at compile time.
 macro_rules! codes {
@@ -50,43 +48,30 @@ impl<T> ByDirection<T> {
     }
 }
 
-/// A railway line that appears in MTR's real-time feeds.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Line {
-    AirportExpress,
-    TungChung,
-    TuenMa,
-    TseungKwanO,
-    EastRail,
-    SouthIsland,
-    TsuenWan,
-    Island,
-    KwunTong,
-    DisneylandResort,
-    /// Light Rail appears in the line status feed but has no Next Train data.
-    LightRail,
+string_enum! {
+    /// A railway line that appears in MTR's real-time feeds.
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub enum Line {
+        AirportExpress => "AEL",
+        TungChung => "TCL",
+        TuenMa => "TML",
+        TseungKwanO => "TKL",
+        EastRail => "EAL",
+        SouthIsland => "SIL",
+        TsuenWan => "TWL",
+        Island => "ISL",
+        KwunTong => "KTL",
+        DisneylandResort => "DRL",
+        /// Light Rail appears in the line status feed but has no Next Train data.
+        LightRail => "LR",
+    }
+
+    /// The MTR line code, such as `TKL`.
+    pub const fn code;
+    unknown = UnknownLineCode;
 }
 
 impl Line {
-    pub const ALL: [Self; 11] = [
-        Self::AirportExpress,
-        Self::TungChung,
-        Self::TuenMa,
-        Self::TseungKwanO,
-        Self::EastRail,
-        Self::SouthIsland,
-        Self::TsuenWan,
-        Self::Island,
-        Self::KwunTong,
-        Self::DisneylandResort,
-        Self::LightRail,
-    ];
-
-    /// The MTR line code, such as `TKL`.
-    pub const fn code(self) -> &'static str {
-        self.profile().code
-    }
-
     pub const fn name(self) -> Localized<&'static str> {
         self.profile().name
     }
@@ -217,31 +202,12 @@ impl Line {
     }
 }
 
-/// Parses a line code case-insensitively.
-impl FromStr for Line {
-    type Err = UnknownLineCode;
-
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        Self::ALL
-            .into_iter()
-            .find(|line| line.code().eq_ignore_ascii_case(input))
-            .ok_or(UnknownLineCode)
-    }
-}
-
-impl fmt::Display for Line {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.code())
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 #[error("unknown MTR line code")]
 pub struct UnknownLineCode;
 
 /// Static reference data for one line.
 struct LineProfile {
-    code: &'static str,
     name: Localized<&'static str>,
     color: &'static str,
     stations: &'static [StationCode],
@@ -298,7 +264,6 @@ impl Branch {
 // the MTR line status feed.
 
 const AIRPORT_EXPRESS: LineProfile = LineProfile {
-    code: "AEL",
     name: Localized::new("Airport Express", "機場快綫"),
     color: "#1C7670",
     stations: codes!["HOK", "KOW", "TSY", "AIR", "AWE"],
@@ -307,7 +272,6 @@ const AIRPORT_EXPRESS: LineProfile = LineProfile {
 };
 
 const TUNG_CHUNG: LineProfile = LineProfile {
-    code: "TCL",
     name: Localized::new("Tung Chung Line", "東涌綫"),
     color: "#FE7F1D",
     stations: codes!["HOK", "KOW", "OLY", "NAC", "LAK", "TSY", "SUN", "TUC"],
@@ -316,7 +280,6 @@ const TUNG_CHUNG: LineProfile = LineProfile {
 };
 
 const TUEN_MA: LineProfile = LineProfile {
-    code: "TML",
     name: Localized::new("Tuen Ma Line", "屯馬綫"),
     color: "#9A3B26",
     stations: codes![
@@ -329,7 +292,6 @@ const TUEN_MA: LineProfile = LineProfile {
 };
 
 const TSEUNG_KWAN_O: LineProfile = LineProfile {
-    code: "TKL",
     name: Localized::new("Tseung Kwan O Line", "將軍澳綫"),
     color: "#6B208B",
     stations: codes!["NOP", "QUB", "YAT", "TIK", "TKO", "LHP", "HAH", "POA"],
@@ -342,7 +304,6 @@ const TSEUNG_KWAN_O: LineProfile = LineProfile {
 };
 
 const EAST_RAIL: LineProfile = LineProfile {
-    code: "EAL",
     name: Localized::new("East Rail Line", "東鐵綫"),
     color: "#5EB6E4",
     stations: codes![
@@ -365,7 +326,6 @@ const EAST_RAIL: LineProfile = LineProfile {
 };
 
 const SOUTH_ISLAND: LineProfile = LineProfile {
-    code: "SIL",
     name: Localized::new("South Island Line", "南港島綫"),
     color: "#99CF16",
     stations: codes!["ADM", "OCP", "WCH", "LET", "SOH"],
@@ -374,7 +334,6 @@ const SOUTH_ISLAND: LineProfile = LineProfile {
 };
 
 const TSUEN_WAN: LineProfile = LineProfile {
-    code: "TWL",
     name: Localized::new("Tsuen Wan Line", "荃灣綫"),
     color: "#FF0000",
     stations: codes![
@@ -386,7 +345,6 @@ const TSUEN_WAN: LineProfile = LineProfile {
 };
 
 const ISLAND: LineProfile = LineProfile {
-    code: "ISL",
     name: Localized::new("Island Line", "港島綫"),
     color: "#0860A8",
     stations: codes![
@@ -398,7 +356,6 @@ const ISLAND: LineProfile = LineProfile {
 };
 
 const KWUN_TONG: LineProfile = LineProfile {
-    code: "KTL",
     name: Localized::new("Kwun Tong Line", "觀塘綫"),
     color: "#1A9431",
     stations: codes![
@@ -410,7 +367,6 @@ const KWUN_TONG: LineProfile = LineProfile {
 };
 
 const DISNEYLAND_RESORT: LineProfile = LineProfile {
-    code: "DRL",
     name: Localized::new("Disneyland Resort Line", "迪士尼綫"),
     color: "#F550A6",
     stations: codes!["SUN", "DIS"],
@@ -420,7 +376,6 @@ const DISNEYLAND_RESORT: LineProfile = LineProfile {
 };
 
 const LIGHT_RAIL: LineProfile = LineProfile {
-    code: "LR",
     name: Localized::new("Light Rail", "輕鐵"),
     color: "#9F7A00",
     stations: codes![],
@@ -434,6 +389,7 @@ mod tests {
 
     use super::*;
     use crate::domain::network::Station;
+    use crate::station;
 
     fn code(code: &str) -> StationCode {
         code.parse().expect("test station code should be valid")
@@ -574,7 +530,7 @@ mod tests {
 
     #[test]
     fn finds_every_line_at_an_interchange() {
-        let lines: Vec<Line> = Line::serving(code("ADM")).collect();
+        let lines: Vec<Line> = Line::serving(station!("ADM")).collect();
 
         assert_eq!(
             lines,

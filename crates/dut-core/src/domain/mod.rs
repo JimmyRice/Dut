@@ -5,6 +5,7 @@ pub mod network;
 pub mod next_train;
 pub mod reference;
 pub mod source_health;
+mod string_enum;
 mod three_letters;
 pub mod time;
 pub mod weather;

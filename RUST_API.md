@@ -286,7 +286,7 @@ All modules below live under `dut_core::domain`. Parse input once at the boundar
 | Type | Use |
 | --- | --- |
 | `Line` | Case-insensitive parse, `code()`, `name()`, `color()`, `stations()`, `termini()`, `towards(station, direction)`, `leads(from, to, direction)`, `serves(station)`, `Line::serving(station)`, `Line::with_next_train()`, `Line::ALL`. `leads` requires a shared branch and a destination beyond the origin. |
-| `StationCode` | Copy newtype, three uppercase letters. Runtime: `"tko".parse::<StationCode>()`; constants: `StationCode::from_static("TKO")`. Invalid static literals fail const evaluation. |
+| `StationCode` | Copy newtype, three uppercase letters. Runtime: `"tko".parse::<StationCode>()`; literals in source (tests, tables): `dut_core::station!("TKO")`, which expands to a `const` block. `StationCode::from_static("TKO")` is the underlying `const fn`. A mistyped literal fails the build. |
 | `Station` | `find(code)` validates membership and provides names; `all()` is code-sorted |
 | `Direction`, `ByDirection<T>` | MTR Up/Down; `ByDirection::get(direction)` |
 

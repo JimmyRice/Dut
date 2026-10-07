@@ -135,6 +135,7 @@ impl PublishedNetwork {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::station;
 
     fn code(code: &str) -> StationCode {
         code.parse().expect("test station code should be valid")
@@ -181,7 +182,7 @@ mod tests {
 
         assert_eq!(
             network.drift(),
-            vec![NetworkDrift::Unpublished(code("RAC"))]
+            vec![NetworkDrift::Unpublished(station!("RAC"))]
         );
     }
 
@@ -189,10 +190,14 @@ mod tests {
     fn reports_new_and_renamed_stations() {
         let mut network = compiled();
         network.stations.push(PublishedStation {
-            code: code("XYZ"),
+            code: station!("XYZ"),
             name: Localized::new("New Town".to_owned(), "新市鎮".to_owned()),
         });
-        if let Some(lai_king) = network.stations.iter_mut().find(|s| s.code == code("LAK")) {
+        if let Some(lai_king) = network
+            .stations
+            .iter_mut()
+            .find(|s| s.code == station!("LAK"))
+        {
             lai_king.name.tc = "茘景".to_owned();
         }
         network.stations.sort_by_key(|station| station.code);
@@ -201,10 +206,10 @@ mod tests {
             network.drift(),
             vec![
                 NetworkDrift::Renamed {
-                    station: code("LAK"),
+                    station: station!("LAK"),
                     published: Localized::new("Lai King".to_owned(), "茘景".to_owned()),
                 },
-                NetworkDrift::UnknownStation(code("XYZ")),
+                NetworkDrift::UnknownStation(station!("XYZ")),
             ]
         );
     }
@@ -214,10 +219,10 @@ mod tests {
         let mut network = compiled();
         for route in &mut network.routes {
             if route.line == Line::KwunTong {
-                route.stations.retain(|stop| *stop != code("WHA"));
+                route.stations.retain(|stop| *stop != station!("WHA"));
             }
             if route.line == Line::TsuenWan {
-                route.stations.push(code("WHA"));
+                route.stations.push(station!("WHA"));
             }
         }
 
@@ -226,13 +231,13 @@ mod tests {
             vec![
                 NetworkDrift::LineStations {
                     line: Line::TsuenWan,
-                    added: vec![code("WHA")],
+                    added: vec![station!("WHA")],
                     removed: vec![],
                 },
                 NetworkDrift::LineStations {
                     line: Line::KwunTong,
                     added: vec![],
-                    removed: vec![code("WHA")],
+                    removed: vec![station!("WHA")],
                 },
             ]
         );

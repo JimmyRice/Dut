@@ -200,12 +200,9 @@ impl SimulatedLineStatus {
 #[cfg(test)]
 mod tests {
     use dut_core::domain::network::Direction;
+    use dut_core::station;
 
     use super::*;
-
-    fn code(code: &str) -> StationCode {
-        code.parse().expect("test station code should be valid")
-    }
 
     fn next_trains(scenario: BoardScenario) -> SimulatedNextTrains {
         SimulatedNextTrains::new(scenario, Seed::DEFAULT)
@@ -214,7 +211,7 @@ mod tests {
     #[tokio::test]
     async fn a_board_is_fresh_for_at_most_ten_seconds() {
         let view = next_trains(BoardScenario::OffPeak)
-            .board(Line::TseungKwanO, code("TKO"))
+            .board(Line::TseungKwanO, station!("TKO"))
             .await
             .expect("board should load");
 
@@ -231,8 +228,8 @@ mod tests {
     async fn requests_are_validated_as_for_real_boards() {
         let simulated = next_trains(BoardScenario::Peak);
 
-        let off_line = simulated.board(Line::TseungKwanO, code("ADM")).await;
-        let unknown = simulated.station_boards(code("XYZ")).await;
+        let off_line = simulated.board(Line::TseungKwanO, station!("ADM")).await;
+        let unknown = simulated.station_boards(station!("XYZ")).await;
 
         assert!(matches!(
             off_line,
@@ -244,7 +241,7 @@ mod tests {
     #[tokio::test]
     async fn a_partial_outage_fails_one_line_at_an_interchange() {
         let boards = next_trains(BoardScenario::PartialOutage)
-            .station_boards(code("ADM"))
+            .station_boards(station!("ADM"))
             .await
             .expect("the other lines should load");
 
@@ -260,7 +257,7 @@ mod tests {
     #[tokio::test]
     async fn a_partial_outage_fails_the_requested_line() {
         let result = next_trains(BoardScenario::PartialOutage)
-            .board(Line::Island, code("ADM"))
+            .board(Line::Island, station!("ADM"))
             .await;
 
         assert!(matches!(result, Err(NextTrainError::Unavailable(_))));
@@ -269,7 +266,7 @@ mod tests {
     #[tokio::test]
     async fn an_unavailable_upstream_fails_every_line() {
         let result = next_trains(BoardScenario::UpstreamUnavailable)
-            .station_boards(code("ADM"))
+            .station_boards(station!("ADM"))
             .await;
 
         assert!(matches!(result, Err(NextTrainError::Unavailable(_))));
@@ -278,7 +275,7 @@ mod tests {
     #[tokio::test]
     async fn an_incident_at_a_station_affects_one_line() {
         let boards = next_trains(BoardScenario::Delayed)
-            .station_boards(code("ADM"))
+            .station_boards(station!("ADM"))
             .await
             .expect("boards should load");
 
@@ -293,7 +290,7 @@ mod tests {
     #[tokio::test]
     async fn stale_boards_are_about_a_minute_old() {
         let view = next_trains(BoardScenario::Stale)
-            .board(Line::KwunTong, code("KOT"))
+            .board(Line::KwunTong, station!("KOT"))
             .await
             .expect("stale boards are still served");
 

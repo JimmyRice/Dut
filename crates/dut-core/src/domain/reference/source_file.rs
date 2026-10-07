@@ -1,64 +1,27 @@
-use std::{fmt, str::FromStr, sync::Arc};
+use std::{fmt, sync::Arc};
 
 use jiff::Timestamp;
 use thiserror::Error;
 
-use crate::domain::reference::dataset::Revision;
+use crate::domain::{reference::dataset::Revision, string_enum::string_enum};
 
-/// A file on the MTR's open data portal that this service reads and
-/// mirrors.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum SourceFile {
-    LinesAndStations,
-    LinesFares,
-    AirportExpressFares,
-    LightRailRoutesAndStops,
-    LightRailFares,
-    BarrierFreeFacilityCategories,
-    BarrierFreeFacilities,
-}
-
-impl SourceFile {
-    pub const ALL: [Self; 7] = [
-        Self::LinesAndStations,
-        Self::LinesFares,
-        Self::AirportExpressFares,
-        Self::LightRailRoutesAndStops,
-        Self::LightRailFares,
-        Self::BarrierFreeFacilityCategories,
-        Self::BarrierFreeFacilities,
-    ];
+string_enum! {
+    /// A file on the MTR's open data portal that this service reads and
+    /// mirrors.
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub enum SourceFile {
+        LinesAndStations => "mtr_lines_and_stations.csv",
+        LinesFares => "mtr_lines_fares.csv",
+        AirportExpressFares => "airport_express_fares.csv",
+        LightRailRoutesAndStops => "light_rail_routes_and_stops.csv",
+        LightRailFares => "light_rail_fares.csv",
+        BarrierFreeFacilityCategories => "barrier_free_facility_category.csv",
+        BarrierFreeFacilities => "barrier_free_facilities.csv",
+    }
 
     /// The file's name on the portal, such as `mtr_lines_fares.csv`.
-    pub const fn file_name(self) -> &'static str {
-        match self {
-            Self::LinesAndStations => "mtr_lines_and_stations.csv",
-            Self::LinesFares => "mtr_lines_fares.csv",
-            Self::AirportExpressFares => "airport_express_fares.csv",
-            Self::LightRailRoutesAndStops => "light_rail_routes_and_stops.csv",
-            Self::LightRailFares => "light_rail_fares.csv",
-            Self::BarrierFreeFacilityCategories => "barrier_free_facility_category.csv",
-            Self::BarrierFreeFacilities => "barrier_free_facilities.csv",
-        }
-    }
-}
-
-/// Parses a file name as the portal spells it, case-insensitively.
-impl FromStr for SourceFile {
-    type Err = UnknownSourceFile;
-
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        Self::ALL
-            .into_iter()
-            .find(|file| file.file_name().eq_ignore_ascii_case(input))
-            .ok_or(UnknownSourceFile)
-    }
-}
-
-impl fmt::Display for SourceFile {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.file_name())
-    }
+    pub const fn file_name;
+    unknown = UnknownSourceFile;
 }
 
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]

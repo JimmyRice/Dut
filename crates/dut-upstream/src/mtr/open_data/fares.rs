@@ -197,6 +197,8 @@ pub(super) fn clean_light_rail(
 
 #[cfg(test)]
 mod tests {
+    use dut_core::station;
+
     use super::*;
     use crate::{
         fixtures,
@@ -206,10 +208,6 @@ mod tests {
     // The fare fixtures are captured files trimmed to trips between a few
     // stops: Central, Admiralty, Hong Kong, Tseung Kwan O, LOHAS Park,
     // Fo Tan, and Racecourse for the MTR, and five Light Rail stops.
-
-    fn code(code: &str) -> StationCode {
-        code.parse().expect("test station code should be valid")
-    }
 
     fn index() -> StationIndex {
         let (_, index) =
@@ -232,7 +230,7 @@ mod tests {
         .expect("the captured fares should clean");
 
         let fares = table
-            .get(code("CEN"), code("ADM"))
+            .get(station!("CEN"), station!("ADM"))
             .expect("Central to Admiralty");
         assert_eq!(cents(fares.octopus.adult), 490);
         assert_eq!(cents(fares.octopus.student), 320);
@@ -252,8 +250,8 @@ mod tests {
         )
         .expect("the captured fares should clean");
 
-        assert!(table.get(code("RAC"), code("FOT")).is_some());
-        assert_eq!(index.get(70), Some(code("RAC")));
+        assert!(table.get(station!("RAC"), station!("FOT")).is_some());
+        assert_eq!(index.get(70), Some(station!("RAC")));
     }
 
     #[test]
@@ -265,7 +263,7 @@ mod tests {
         .expect("the captured Airport Express fares should clean");
 
         let fares = table
-            .get(code("KOW"), code("AIR"))
+            .get(station!("KOW"), station!("AIR"))
             .expect("Kowloon to Airport");
         assert_eq!(cents(fares.octopus.adult), 10_500);
         assert_eq!(cents(fares.octopus.child), 5_250);

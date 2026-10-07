@@ -264,6 +264,7 @@ fn lenient_number<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u8, D::E
 #[cfg(test)]
 mod tests {
     use dut_core::domain::network::Direction;
+    use dut_core::station;
 
     use super::*;
     use crate::fixtures;
@@ -271,10 +272,6 @@ mod tests {
     fn fixture(name: &str) -> ScheduleResponse {
         let body = fixtures::read(&format!("mtr/{name}"));
         serde_json::from_slice(&body).expect("fixture should decode")
-    }
-
-    fn code(code: &str) -> StationCode {
-        code.parse().expect("test station code should be valid")
     }
 
     fn published(schedule: Schedule) -> (NextTrainBoard, Option<AlertNotice>) {
@@ -296,7 +293,7 @@ mod tests {
     #[test]
     fn decodes_a_regular_board() {
         let schedule = fixture("next_train_tkl_tko.json")
-            .into_schedule(Line::TseungKwanO, code("TKO"), Timestamp::UNIX_EPOCH)
+            .into_schedule(Line::TseungKwanO, station!("TKO"), Timestamp::UNIX_EPOCH)
             .expect("board should convert");
         let (board, notice) = published(schedule);
 
@@ -313,7 +310,7 @@ mod tests {
             up[0],
             TrainArrival {
                 sequence: 1,
-                destination: code("LHP"),
+                destination: station!("LHP"),
                 platforms: Platforms::one(1),
                 arrival_at: parse_local("2026-09-27 22:36:36").expect("valid time"),
                 time_type: None,
@@ -326,7 +323,7 @@ mod tests {
     #[test]
     fn decodes_east_rail_line_extensions() {
         let schedule = fixture("next_train_eal_taw.json")
-            .into_schedule(Line::EastRail, code("TAW"), Timestamp::UNIX_EPOCH)
+            .into_schedule(Line::EastRail, station!("TAW"), Timestamp::UNIX_EPOCH)
             .expect("board should convert");
         let (board, _) = published(schedule);
 
@@ -341,7 +338,7 @@ mod tests {
     #[test]
     fn decodes_both_platforms_at_airport() {
         let schedule = fixture("next_train_ael_air.json")
-            .into_schedule(Line::AirportExpress, code("AIR"), Timestamp::UNIX_EPOCH)
+            .into_schedule(Line::AirportExpress, station!("AIR"), Timestamp::UNIX_EPOCH)
             .expect("board should convert");
         let (board, _) = published(schedule);
 
@@ -368,7 +365,7 @@ mod tests {
         .expect("response should decode");
 
         let schedule = response
-            .into_schedule(Line::AirportExpress, code("AIR"), Timestamp::UNIX_EPOCH)
+            .into_schedule(Line::AirportExpress, station!("AIR"), Timestamp::UNIX_EPOCH)
             .expect("board should convert");
         let (board, _) = published(schedule);
 
@@ -382,7 +379,7 @@ mod tests {
     #[test]
     fn treats_no_content_as_an_empty_board() {
         let schedule = fixture("next_train_empty.json")
-            .into_schedule(Line::TseungKwanO, code("TKO"), Timestamp::UNIX_EPOCH)
+            .into_schedule(Line::TseungKwanO, station!("TKO"), Timestamp::UNIX_EPOCH)
             .expect("empty response should convert");
         let (board, notice) = published(schedule);
 
@@ -402,7 +399,7 @@ mod tests {
         .expect("error response should decode");
 
         let schedule = response
-            .into_schedule(Line::TseungKwanO, code("TKO"), Timestamp::UNIX_EPOCH)
+            .into_schedule(Line::TseungKwanO, station!("TKO"), Timestamp::UNIX_EPOCH)
             .expect("rejection should convert");
 
         assert!(matches!(schedule, Schedule::Rejected { code, .. } if code == "NT-500"));
@@ -416,7 +413,7 @@ mod tests {
         .expect("alert response should decode");
 
         let schedule = response
-            .into_schedule(Line::TseungKwanO, code("TKO"), Timestamp::UNIX_EPOCH)
+            .into_schedule(Line::TseungKwanO, station!("TKO"), Timestamp::UNIX_EPOCH)
             .expect("alert should convert");
         let (_, notice) = published(schedule);
 
@@ -453,7 +450,8 @@ mod tests {
             serde_json::from_str(r#"{"status":1,"data":{"TKL-TKO":{"curr_time":"soon","UP":[]}}}"#)
                 .expect("response should decode");
 
-        let result = response.into_schedule(Line::TseungKwanO, code("TKO"), Timestamp::UNIX_EPOCH);
+        let result =
+            response.into_schedule(Line::TseungKwanO, station!("TKO"), Timestamp::UNIX_EPOCH);
 
         assert!(matches!(result, Err(ScheduleDataError::Time { .. })));
     }

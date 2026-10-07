@@ -1,75 +1,49 @@
 //! Whether the service can currently see each upstream it reads in the
 //! background.
 
-use std::fmt;
+use crate::domain::string_enum::string_enum;
 
-/// An upstream read in the background.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum SourceId {
-    /// The MTR line status feed.
-    MtrLineStatus,
-    /// Next Train boards, sampled at a few stations for delay flags and
-    /// special arrangement notices.
-    MtrNextTrain,
-    /// The Hong Kong Observatory's weather warnings.
-    HkoWarnings,
-    /// The files on the MTR's open data portal: stations, fares, Light Rail,
-    /// and barrier-free facilities.
-    MtrOpenData,
-}
+string_enum! {
+    /// An upstream read in the background.
+    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+    pub enum SourceId {
+        /// The MTR line status feed.
+        MtrLineStatus => "mtr.line_status",
+        /// Next Train boards, sampled at a few stations for delay flags and
+        /// special arrangement notices.
+        MtrNextTrain => "mtr.next_train",
+        /// The Hong Kong Observatory's weather warnings.
+        HkoWarnings => "hko.warnings",
+        /// The files on the MTR's open data portal: stations, fares, Light Rail,
+        /// and barrier-free facilities.
+        MtrOpenData => "mtr.open_data",
+    }
 
-impl SourceId {
     /// Short, stable name used in logs, such as `mtr.line_status`.
-    pub const fn code(self) -> &'static str {
-        match self {
-            Self::MtrLineStatus => "mtr.line_status",
-            Self::MtrNextTrain => "mtr.next_train",
-            Self::HkoWarnings => "hko.warnings",
-            Self::MtrOpenData => "mtr.open_data",
-        }
+    pub const fn code;
+}
+
+string_enum! {
+    /// How well the service can currently see a source.
+    ///
+    /// A source that cannot be read says nothing about service: its last known
+    /// data is kept, and only this state reports the outage.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum HealthState {
+        /// No read has finished yet.
+        Starting => "starting",
+        /// The last read succeeded.
+        Healthy => "healthy",
+        /// Recent reads failed, but the last success is recent enough that its
+        /// data can still be relied on.
+        Failing => "failing",
+        /// Nothing has been read for so long that the source's data can no longer
+        /// be relied on.
+        Blind => "blind",
     }
-}
 
-impl fmt::Display for SourceId {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.code())
-    }
-}
-
-/// How well the service can currently see a source.
-///
-/// A source that cannot be read says nothing about service: its last known
-/// data is kept, and only this state reports the outage.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum HealthState {
-    /// No read has finished yet.
-    Starting,
-    /// The last read succeeded.
-    Healthy,
-    /// Recent reads failed, but the last success is recent enough that its
-    /// data can still be relied on.
-    Failing,
-    /// Nothing has been read for so long that the source's data can no longer
-    /// be relied on.
-    Blind,
-}
-
-impl HealthState {
     /// Lowercase name used in logs, such as `blind`.
-    pub const fn code(self) -> &'static str {
-        match self {
-            Self::Starting => "starting",
-            Self::Healthy => "healthy",
-            Self::Failing => "failing",
-            Self::Blind => "blind",
-        }
-    }
-}
-
-impl fmt::Display for HealthState {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.code())
-    }
+    pub const fn code;
 }
 
 /// A source moved from one [`HealthState`] to another.

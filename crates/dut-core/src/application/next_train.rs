@@ -204,6 +204,7 @@ mod tests {
 
     use super::*;
     use crate::domain::network::ByDirection;
+    use crate::station;
 
     /// Serves an empty board for every request except the listed failures,
     /// and records which boards were requested.
@@ -267,21 +268,17 @@ mod tests {
         NextTrainService::new(Arc::clone(source))
     }
 
-    fn code(code: &str) -> StationCode {
-        code.parse().expect("test station code should be valid")
-    }
-
     #[tokio::test]
     async fn board_reads_from_the_source() {
         let source = Arc::new(FakeSource::default());
 
         let view = service(&source)
-            .board(Line::TseungKwanO, code("TKO"))
+            .board(Line::TseungKwanO, station!("TKO"))
             .await
             .expect("board should load");
 
-        assert_eq!(view.board().station, code("TKO"));
-        assert_eq!(source.requests(), [(Line::TseungKwanO, code("TKO"))]);
+        assert_eq!(view.board().station, station!("TKO"));
+        assert_eq!(source.requests(), [(Line::TseungKwanO, station!("TKO"))]);
     }
 
     #[tokio::test]
@@ -289,7 +286,7 @@ mod tests {
         let source = Arc::new(FakeSource::default());
 
         let error = service(&source)
-            .board(Line::TseungKwanO, code("ADM"))
+            .board(Line::TseungKwanO, station!("ADM"))
             .await
             .expect_err("ADM is not on TKL");
 
@@ -308,7 +305,7 @@ mod tests {
         let source = Arc::new(FakeSource::default());
 
         let error = service(&source)
-            .board(Line::TseungKwanO, code("XYZ"))
+            .board(Line::TseungKwanO, station!("XYZ"))
             .await
             .expect_err("XYZ is not a station");
 
@@ -321,7 +318,7 @@ mod tests {
         let source = Arc::new(FakeSource::default());
 
         let boards = service(&source)
-            .station_boards(code("ADM"))
+            .station_boards(station!("ADM"))
             .await
             .expect("boards should load");
 
@@ -343,7 +340,7 @@ mod tests {
         let source = Arc::new(FakeSource::failing([Line::SouthIsland]));
 
         let boards = service(&source)
-            .station_boards(code("ADM"))
+            .station_boards(station!("ADM"))
             .await
             .expect("other lines should still load");
 
@@ -362,7 +359,7 @@ mod tests {
         let source = Arc::new(FakeSource::failing([Line::TseungKwanO]));
 
         let error = service(&source)
-            .station_boards(code("TKO"))
+            .station_boards(station!("TKO"))
             .await
             .expect_err("the only line failed");
 
