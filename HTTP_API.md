@@ -517,15 +517,15 @@ content-length: 0
 
 Sections 6–13 read one in-memory snapshot of seven MTR CSV files. The first poll starts immediately, followed by a poll every 24 hours and a 5-minute retry on failure. A publish is all-or-nothing. Readers may wait for the first poll; requests never trigger a new portal fetch. Freshness is 86430 seconds from fetch, then a 30-day stale window, after which `502 upstream_unavailable` is returned. A new process has no prior snapshot.
 
-For local-first sync, request `/api/data`, compare opaque revisions with local copies, and download only changed datasets. Datasets use weak ETags containing service version plus content hash, such as `W/"0.5.1-5987f5c9680ce780"`; raw files use only the byte hash. Send `If-None-Match` to receive an empty `304` with ETag and caching headers when unchanged. The index itself has no ETag. Treat revisions as equality tokens, not timestamps or sortable versions.
+For local-first sync, request `/api/data`, compare opaque revisions with local copies, and download only changed datasets. Datasets use weak ETags containing service version plus content hash, such as `W/"0.5.2-5987f5c9680ce780"`; raw files use only the byte hash. Send `If-None-Match` to receive an empty `304` with ETag and caching headers when unchanged. The index itself has no ETag. Treat revisions as equality tokens, not timestamps or sortable versions.
 
 ```bash
-curl -i -H 'If-None-Match: W/"0.5.1-5987f5c9680ce780"' http://127.0.0.1:3000/api/data/fares
+curl -i -H 'If-None-Match: W/"0.5.2-5987f5c9680ce780"' http://127.0.0.1:3000/api/data/fares
 ```
 
 ```http
 HTTP/1.1 304 Not Modified
-etag: W/"0.5.1-5987f5c9680ce780"
+etag: W/"0.5.2-5987f5c9680ce780"
 cache-control: public, max-age=86000
 ```
 
@@ -563,37 +563,37 @@ curl http://127.0.0.1:3000/api/data
     {
       "name": "stations",
       "path": "/api/data/stations",
-      "revision": "0.5.1-0d1201f5804cd4cd",
+      "revision": "0.5.2-0d1201f5804cd4cd",
       "updated_at": "2023-11-21T18:09:07+08:00"
     },
     {
       "name": "fares",
       "path": "/api/data/fares",
-      "revision": "0.5.1-5987f5c9680ce780",
+      "revision": "0.5.2-5987f5c9680ce780",
       "updated_at": "2026-04-03T01:02:50+08:00"
     },
     {
       "name": "airport-express-fares",
       "path": "/api/data/airport-express-fares",
-      "revision": "0.5.1-545393302ce4c18f",
+      "revision": "0.5.2-545393302ce4c18f",
       "updated_at": "2025-06-22T01:05:16+08:00"
     },
     {
       "name": "light-rail",
       "path": "/api/data/light-rail",
-      "revision": "0.5.1-97a676332b659216",
+      "revision": "0.5.2-97a676332b659216",
       "updated_at": "2026-07-05T00:58:02+08:00"
     },
     {
       "name": "light-rail-fares",
       "path": "/api/data/light-rail-fares",
-      "revision": "0.5.1-e9deb534253c3bde",
+      "revision": "0.5.2-e9deb534253c3bde",
       "updated_at": "2024-06-30T01:39:03+08:00"
     },
     {
       "name": "accessibility",
       "path": "/api/data/accessibility",
-      "revision": "0.5.1-b199444f08da98bf",
+      "revision": "0.5.2-b199444f08da98bf",
       "updated_at": "2023-06-25T02:28:09+08:00"
     }
   ],
