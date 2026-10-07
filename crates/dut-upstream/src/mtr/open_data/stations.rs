@@ -124,6 +124,7 @@ fn route((key, mut stops): (RouteKey, Vec<(f64, StationCode)>)) -> Route {
 #[cfg(test)]
 mod tests {
     use dut_core::domain::localized::Localized;
+    use dut_core::station;
 
     use super::*;
     use crate::fixtures;
@@ -166,7 +167,7 @@ mod tests {
     #[test]
     fn uses_the_standard_form_of_lai() {
         let (network, _) = published();
-        let lai_king = network.stations.iter().find(|s| s.code == code("LAK"));
+        let lai_king = network.stations.iter().find(|s| s.code == station!("LAK"));
 
         assert_eq!(
             lai_king.map(|station| &station.name),
@@ -212,8 +213,8 @@ mod tests {
     fn indexes_both_ids_of_shared_stations() {
         let (_, index) = published();
 
-        assert_eq!(index.get(39), Some(code("HOK")));
-        assert_eq!(index.get(44), Some(code("HOK")));
+        assert_eq!(index.get(39), Some(station!("HOK")));
+        assert_eq!(index.get(44), Some(station!("HOK")));
         assert_eq!(index.get(70), None);
     }
 
@@ -225,7 +226,7 @@ mod tests {
 
         assert_eq!(
             network.drift(),
-            vec![NetworkDrift::Unpublished(code("RAC"))]
+            vec![NetworkDrift::Unpublished(station!("RAC"))]
         );
     }
 

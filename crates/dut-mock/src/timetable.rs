@@ -383,6 +383,8 @@ const DISNEYLAND_RESORT: Timetable = Timetable {
 
 #[cfg(test)]
 mod tests {
+    use dut_core::station;
+
     use super::*;
 
     const PERIODS: [Period; 3] = [Period::Peak, Period::OffPeak, Period::LateNight];
@@ -490,9 +492,18 @@ mod tests {
     fn fo_tan_and_racecourse_count_as_one_stop() {
         let line = Line::EastRail;
 
-        assert_eq!(hops(line, code("SHT"), code("UNI"), Direction::Up), Some(2));
-        assert_eq!(hops(line, code("SHT"), code("FOT"), Direction::Up), Some(1));
-        assert_eq!(hops(line, code("UNI"), code("SHT"), Direction::Up), None);
+        assert_eq!(
+            hops(line, station!("SHT"), station!("UNI"), Direction::Up),
+            Some(2)
+        );
+        assert_eq!(
+            hops(line, station!("SHT"), station!("FOT"), Direction::Up),
+            Some(1)
+        );
+        assert_eq!(
+            hops(line, station!("UNI"), station!("SHT"), Direction::Up),
+            None
+        );
     }
 
     #[test]

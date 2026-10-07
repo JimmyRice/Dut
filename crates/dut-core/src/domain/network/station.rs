@@ -91,6 +91,35 @@ impl fmt::Debug for StationCode {
 #[error("a station code must be three ASCII letters")]
 pub struct InvalidStationCode;
 
+/// Builds a [`StationCode`] from a literal, which the compiler checks.
+///
+/// Prefer it to `parse` wherever the code is written out in source, such as
+/// in tests and static tables: a mistyped code fails the build instead of
+/// panicking when the line runs.
+///
+/// # Examples
+///
+/// ```
+/// use dut_core::{domain::network::StationCode, station};
+///
+/// assert_eq!(station!("tko"), "TKO".parse::<StationCode>()?);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+///
+/// A literal that is not three ASCII letters does not compile:
+///
+/// ```compile_fail
+/// use dut_core::station;
+///
+/// let _ = station!("TK0");
+/// ```
+#[macro_export]
+macro_rules! station {
+    ($code:literal) => {
+        const { $crate::domain::network::StationCode::from_static($code) }
+    };
+}
+
 /// A station served by the Next Train API, with its bilingual name.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Station {

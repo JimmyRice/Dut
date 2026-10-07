@@ -328,6 +328,8 @@ mod tests {
 
     use serde_json::Value;
 
+    use dut_core::station;
+
     use super::*;
 
     const SERVICE: [BoardScenario; 3] = [
@@ -710,7 +712,7 @@ mod tests {
         let delayed = board(Line::KwunTong, "KOT", BoardScenario::Delayed, morning());
         let unaffected = simulate(
             Line::KwunTong,
-            code("KOT"),
+            station!("KOT"),
             Conditions::of(BoardScenario::Delayed, false),
             Seed::DEFAULT,
             morning(),
@@ -742,7 +744,7 @@ mod tests {
         );
         let other = simulate(
             Line::TsuenWan,
-            code("ADM"),
+            station!("ADM"),
             Conditions::of(BoardScenario::SpecialArrangement, false),
             Seed::DEFAULT,
             morning(),

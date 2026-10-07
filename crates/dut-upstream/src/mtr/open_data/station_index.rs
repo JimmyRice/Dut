@@ -43,21 +43,19 @@ impl StationIndex {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use dut_core::station;
 
-    fn code(code: &str) -> StationCode {
-        code.parse().expect("test station code should be valid")
-    }
+    use super::*;
 
     #[test]
     fn keeps_the_first_code_for_an_id() {
         let mut index = StationIndex::default();
-        index.insert(39, code("HOK"));
-        index.insert(44, code("HOK"));
-        index.insert(39, code("KOW"));
+        index.insert(39, station!("HOK"));
+        index.insert(44, station!("HOK"));
+        index.insert(39, station!("KOW"));
 
-        assert_eq!(index.get(39), Some(code("HOK")));
-        assert_eq!(index.get(44), Some(code("HOK")));
+        assert_eq!(index.get(39), Some(station!("HOK")));
+        assert_eq!(index.get(44), Some(station!("HOK")));
         assert_eq!(index.get(40), None);
     }
 
@@ -65,16 +63,16 @@ mod tests {
     fn learns_unlisted_ids_by_name() {
         let mut index = StationIndex::default();
 
-        assert_eq!(index.learn(70, "Racecourse"), Some(code("RAC")));
-        assert_eq!(index.get(70), Some(code("RAC")));
+        assert_eq!(index.learn(70, "Racecourse"), Some(station!("RAC")));
+        assert_eq!(index.get(70), Some(station!("RAC")));
         assert_eq!(index.learn(888, "Nowhere"), None);
     }
 
     #[test]
     fn prefers_the_station_list_over_names() {
         let mut index = StationIndex::default();
-        index.insert(1, code("CEN"));
+        index.insert(1, station!("CEN"));
 
-        assert_eq!(index.learn(1, "Admiralty"), Some(code("CEN")));
+        assert_eq!(index.learn(1, "Admiralty"), Some(station!("CEN")));
     }
 }
