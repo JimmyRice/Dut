@@ -25,7 +25,7 @@ use crate::{
     },
     error::ApiError,
     http_cache,
-    routes::params,
+    routes::{mock_events, params},
 };
 
 const SCENARIO_HEADER: HeaderName = HeaderName::from_static("x-mock-scenario");
@@ -41,6 +41,7 @@ pub(crate) fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
             get(line_board),
         )
         .route("/stations/{station}/next-trains", get(station_boards))
+        .route("/events", get(mock_events::events))
 }
 
 async fn scenarios() -> Response {
@@ -108,7 +109,7 @@ async fn station_boards(
 
 /// Labels a response, error or not, with the scenario and seed it was
 /// simulated in.
-fn simulated<S: Scenario>(
+pub(super) fn simulated<S: Scenario>(
     scenario: S,
     seed: Seed,
     response: Result<Response, ApiError>,

@@ -375,6 +375,7 @@ let csv = data.files.get(SourceFile::LinesFares);
 | `Seed` | new(u64)、DEFAULT（0）、fresh()、value()；指定場景預設 DEFAULT，random 冇 seed 就產生新值 |
 | `SimulatedNextTrains::new(scenario, seed)` | board(line, station).await 同 station_boards(station).await 用 NextTrainService；事故喺指定綫或一條途經綫 |
 | `SimulatedLineStatus::new(scenario, seed)` | `status() -> Result<Snapshot<NetworkStatus>, SourceUnavailable>` |
+| `SimulatedStatusChanges::new(scenario, seed)` | `batches() -> Result<impl Iterator<Item = Vec<LineStatusChange>>, SourceUnavailable>`：事故同恢復嘅無限循環，每批係兩個模擬狀態源經領域 diff 得出嘅變更；場景冇變化就係空 |
 
 ```rust
 let (scenario, seed) = "peak"

@@ -346,3 +346,124 @@ async fn simulated_boards_never_reach_the_mtr() {
         .await;
     }
 }
+
+#[tokio::test]
+async fn the_event_stream_opens_with_hello_and_reports_an_incident_and_its_recovery() {
+    let app = TestApp::with_mock_api().await;
+
+    let mut stream = app
+        .open_stream("/api/mock/events?scenario=delayed&seed=7&interval=1")
+        .await;
+
+    assert_eq!(stream.status, StatusCode::OK);
+    assert_eq!(stream.header(header::CONTENT_TYPE), "text/event-stream");
+    assert_eq!(stream.header(header::CACHE_CONTROL), "no-cache");
+    assert_eq!(
+        stream.header(header::HeaderName::from_static("x-mock-scenario")),
+        "delayed"
+    );
+    assert_eq!(
+        stream.header(header::HeaderName::from_static("x-mock-seed")),
+        "7"
+    );
+
+    let (name, hello) = stream.next_event().await;
+    assert_eq!(name, "hello");
+    assert!(
+        hello["server_time"]
+            .as_str()
+            .is_some_and(|time| time.ends_with("+08:00"))
+    );
+
+    let (name, incident) = stream.next_event().await;
+    assert_eq!(name, "line_status");
+    assert_eq!(incident["previous"]["condition"], "normal");
+    assert_eq!(incident["current"]["condition"], "delayed");
+    assert_eq!(incident["current"]["display"], "yellow");
+    assert!(incident["current"]["message"].as_str().is_some());
+    assert!(
+        incident["observed_at"]
+            .as_str()
+            .is_some_and(|time| time.ends_with("+08:00"))
+    );
+    assert!(incident["line"]["name"]["tc"].as_str().is_some());
+    assert!(
+        incident["color"]
+            .as_str()
+            .is_some_and(|color| color.starts_with('#'))
+    );
+
+    let (name, recovery) = stream.next_event().await;
+    assert_eq!(name, "line_status");
+    assert_eq!(recovery["line"]["code"], incident["line"]["code"]);
+    assert_eq!(recovery["previous"]["condition"], "delayed");
+    assert_eq!(recovery["current"]["condition"], "normal");
+    assert_eq!(recovery["current"]["message"], Value::Null);
+}
+
+#[tokio::test]
+async fn a_network_wide_scenario_sends_one_event_per_line() {
+    let app = TestApp::with_mock_api().await;
+    let mut stream = app
+        .open_stream("/api/mock/events?scenario=typhoon_signal&interval=1")
+        .await;
+
+    assert_eq!(stream.next_event().await.0, "hello");
+    let mut lines = Vec::new();
+    for _ in 0..11 {
+        let (name, event) = stream.next_event().await;
+        assert_eq!(name, "line_status");
+        assert_eq!(event["current"]["display"], "typhoon");
+        lines.push(
+            event["line"]["code"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned(),
+        );
+    }
+    lines.sort();
+    lines.dedup();
+    assert_eq!(lines.len(), 11);
+}
+
+#[tokio::test]
+async fn the_event_stream_rejects_what_it_cannot_pace_or_simulate() {
+    let app = TestApp::with_mock_api().await;
+
+    for (uri, status, code) in [
+        (
+            "/api/mock/events?interval=0",
+            StatusCode::BAD_REQUEST,
+            "invalid_query",
+        ),
+        (
+            "/api/mock/events?interval=61",
+            StatusCode::BAD_REQUEST,
+            "invalid_query",
+        ),
+        (
+            "/api/mock/events?interval=soon",
+            StatusCode::BAD_REQUEST,
+            "invalid_query",
+        ),
+        (
+            "/api/mock/events?scenario=heatwave",
+            StatusCode::BAD_REQUEST,
+            "unknown_scenario",
+        ),
+    ] {
+        let response = app.get(uri).await;
+
+        response.assert_json(status);
+        assert_eq!(response.body["error"]["code"], code, "{uri}");
+    }
+}
+
+#[tokio::test]
+async fn the_event_stream_is_off_unless_the_mock_api_is_enabled() {
+    let app = TestApp::start().await;
+
+    let response = app.get("/api/mock/events").await;
+
+    response.assert_json(StatusCode::NOT_FOUND);
+}

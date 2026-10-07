@@ -1,13 +1,14 @@
 //! Shared helpers for route-level tests.
 
-use std::sync::Once;
+use std::{sync::Once, time::Duration};
 
 use axum::{
     Router,
-    body::{Body, Bytes, to_bytes},
+    body::{Body, BodyDataStream, Bytes, to_bytes},
     http::{HeaderMap, HeaderName, Method, Request, StatusCode, header},
 };
 use dut::{AppConfig, build_app};
+use futures::StreamExt;
 use jiff::{Timestamp, tz};
 use serde_json::{Map, Value, json};
 use tower::ServiceExt;
@@ -109,6 +110,29 @@ impl TestApp {
         }
     }
 
+    /// Opens a Server-Sent Events stream, which never ends, so its body is
+    /// read event by event instead of being collected.
+    pub(crate) async fn open_stream(&self, uri: &str) -> EventStream {
+        let response = self
+            .router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(uri)
+                    .body(Body::empty())
+                    .expect("request should be valid"),
+            )
+            .await
+            .expect("route should return a response");
+
+        EventStream {
+            status: response.status(),
+            headers: response.headers().clone(),
+            body: response.into_body().into_data_stream(),
+            pending: String::new(),
+        }
+    }
+
     /// Sends a request without a body and keeps the response body as bytes,
     /// for routes that do not answer with JSON.
     pub(crate) async fn send(&self, method: Method, uri: &str) -> RawResponse {
@@ -166,6 +190,60 @@ fn raise_open_file_limit() {
             eprintln!("could not raise the open file limit: {error}");
         }
     });
+}
+
+/// An open Server-Sent Events response.
+pub(crate) struct EventStream {
+    pub status: StatusCode,
+    pub headers: HeaderMap,
+    body: BodyDataStream,
+    pending: String,
+}
+
+impl EventStream {
+    pub(crate) fn header(&self, name: HeaderName) -> &str {
+        self.headers
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+    }
+
+    /// The name and JSON data of the next event, skipping the comments that
+    /// keep a connection alive. Fails the test if none arrives in time.
+    pub(crate) async fn next_event(&mut self) -> (String, Value) {
+        tokio::time::timeout(Duration::from_secs(10), self.read_event())
+            .await
+            .expect("an event should arrive")
+    }
+
+    async fn read_event(&mut self) -> (String, Value) {
+        loop {
+            while let Some(end) = self.pending.find("\n\n") {
+                let frame: String = self.pending.drain(..end + 2).collect();
+                if let Some(event) = parse_event(&frame) {
+                    return event;
+                }
+            }
+            let chunk = self
+                .body
+                .next()
+                .await
+                .expect("the stream should stay open")
+                .expect("the stream should be readable");
+            self.pending.push_str(&String::from_utf8_lossy(&chunk));
+        }
+    }
+}
+
+fn parse_event(frame: &str) -> Option<(String, Value)> {
+    let field = |name: &str| {
+        frame
+            .lines()
+            .find_map(|line| line.strip_prefix(name)?.strip_prefix(": "))
+    };
+    let name = field("event")?.to_owned();
+    let data = serde_json::from_str(field("data")?).expect("event data should be valid JSON");
+    Some((name, data))
 }
 
 /// A response whose body is kept as received.

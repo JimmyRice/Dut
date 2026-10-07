@@ -54,7 +54,7 @@ impl<'a> From<&'a LineStatus> for LineStatusBody<'a> {
     }
 }
 
-const fn condition_code(condition: &LineCondition) -> &'static str {
+pub(super) const fn condition_code(condition: &LineCondition) -> &'static str {
     match condition {
         LineCondition::Normal => "normal",
         LineCondition::Delayed => "delayed",
@@ -66,7 +66,7 @@ const fn condition_code(condition: &LineCondition) -> &'static str {
     }
 }
 
-const fn display_code(color: DisplayColor) -> &'static str {
+pub(super) const fn display_code(color: DisplayColor) -> &'static str {
     match color {
         DisplayColor::Green => "green",
         DisplayColor::Yellow => "yellow",

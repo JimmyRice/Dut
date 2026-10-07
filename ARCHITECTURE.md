@@ -120,6 +120,8 @@ The compiled network remains authoritative for Next Train. Polls report publishe
 
 The opt-in `/api/mock` routes reuse real DTOs and application validation. `dut-mock` implements a pure simulated source, with no polling, cache, or I/O. A scenario and seed define independent deterministic choices; absolute time advances the timetable without retaining request state. Captured platforms and short workings inform the simulation, while headways remain approximations. A request simulates at most 64 trains per direction per line.
 
+`/api/mock/events` streams line status changes as Server-Sent Events. The changes are the domain diff between a simulated calm feed and a simulated incident, so they match what polling the status route would show; the route paces them with a timer, and a connection holds no state beyond its position in the cycle. Real monitor events are not streamed yet.
+
 <a id="monitor"></a>
 
 ## Monitor and delivery

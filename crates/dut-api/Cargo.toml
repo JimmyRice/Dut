@@ -15,13 +15,14 @@ dut-telemetry.workspace = true
 
 axum.workspace = true
 flate2.workspace = true
+futures.workspace = true
 jiff.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["rt", "sync"] }
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
 tower-http = { workspace = true, features = ["compression-gzip", "request-id", "trace"] }
 tracing.workspace = true
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt"] }
+tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
