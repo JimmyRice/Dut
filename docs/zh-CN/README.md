@@ -164,7 +164,7 @@ docker run --rm -p 3000:3000 dut
 docker buildx build --platform linux/amd64,linux/arm64 -t dut .
 ```
 
-健康检查由编排系统或负载均衡器请求 `GET /api/health`；镜像没有 `HEALTHCHECK`。如果 GHCR 包是私有的，先使用具备 `read:packages` 权限的 token 登录：
+健康检查由编排系统或负载均衡器请求 `GET /api/health`；镜像没有 `HEALTHCHECK`。
 
 ```bash
 docker run --rm -p 3000:3000 ghcr.io/jimmyrice/dut:latest
@@ -192,7 +192,9 @@ git push origin v0.6.0
 | Windows | x86-64 | `dut-x86_64-pc-windows-msvc.zip` |
 | Windows | arm64 | `dut-aarch64-pc-windows-msvc.zip` |
 
-Linux 版本静态链接，不需要 glibc；自行使用精简容器时仍需安装 `ca-certificates`，证书位于其他位置时可设置 `SSL_CERT_FILE`。Windows 版本包含 C runtime。发布构建使用 fat LTO 并移除符号；panic 会终止进程，部署时请配置自动重启。本地执行 `cargo build --profile dist` 可得到同一 profile 的 `target/dist/dut`，编译时间比 release 更长。来源证明取决于仓库可见性与工作流支持：
+Linux 版本静态链接，不需要 glibc；自行使用精简容器时仍需安装 `ca-certificates`，证书位于其他位置时可设置 `SSL_CERT_FILE`。Windows 版本包含 C runtime。发布构建使用 fat LTO 并移除符号；panic 会终止进程，部署时请配置自动重启。本地执行 `cargo build --profile dist` 可得到同一 profile 的 `target/dist/dut`，编译时间比 release 更长。
+
+仓库已公开，发布工作流会为后续发布的程序压缩包和容器镜像附上 GitHub 签署的构建来源证明。可以这样验证压缩包：
 
 ```bash
 gh attestation verify dut-x86_64-unknown-linux-musl.tar.gz -R JimmyRice/Dut

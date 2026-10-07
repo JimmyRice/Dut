@@ -164,7 +164,7 @@ docker run --rm -p 3000:3000 dut
 docker buildx build --platform linux/amd64,linux/arm64 -t dut .
 ```
 
-Use the orchestrator or load balancer to probe `GET /api/health`; the image has no `HEALTHCHECK`. For GHCR, authenticate with a token that has `read:packages` when the package is private:
+Use the orchestrator or load balancer to probe `GET /api/health`; the image has no `HEALTHCHECK`.
 
 ```bash
 docker run --rm -p 3000:3000 ghcr.io/jimmyrice/dut:latest
@@ -192,7 +192,9 @@ git push origin v0.6.0
 | Windows | x86-64 | `dut-x86_64-pc-windows-msvc.zip` |
 | Windows | arm64 | `dut-aarch64-pc-windows-msvc.zip` |
 
-Linux builds are statically linked and need no glibc. Custom minimal containers still need `ca-certificates`; use `SSL_CERT_FILE` if the bundle lives elsewhere. Windows builds include the C runtime. Distribution builds use fat LTO and strip symbols; panic aborts the process, so configure automatic restart. Build the same profile locally with `cargo build --profile dist` (`target/dist/dut`). It takes longer than a release build. Artifact attestations are conditional on repository visibility and workflow support:
+Linux builds are statically linked and need no glibc. Custom minimal containers still need `ca-certificates`; use `SSL_CERT_FILE` if the bundle lives elsewhere. Windows builds include the C runtime. Distribution builds use fat LTO and strip symbols; panic aborts the process, so configure automatic restart. Build the same profile locally with `cargo build --profile dist` (`target/dist/dut`). It takes longer than a release build.
+
+The repository is now public, so the release workflows attach GitHub-signed build provenance to new binary archives and container images. Verify an archive with:
 
 ```bash
 gh attestation verify dut-x86_64-unknown-linux-musl.tar.gz -R JimmyRice/Dut

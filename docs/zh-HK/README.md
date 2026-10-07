@@ -164,7 +164,7 @@ docker run --rm -p 3000:3000 dut
 docker buildx build --platform linux/amd64,linux/arm64 -t dut .
 ```
 
-健康檢查交畀編排系統或負載平衡器，請求 `GET /api/health`；映像冇 `HEALTHCHECK`。GHCR 套件如果係私有，先用有 `read:packages` 權限嘅 token 登入：
+健康檢查交畀編排系統或負載平衡器，請求 `GET /api/health`；映像冇 `HEALTHCHECK`。
 
 ```bash
 docker run --rm -p 3000:3000 ghcr.io/jimmyrice/dut:latest
@@ -192,7 +192,9 @@ git push origin v0.6.0
 | Windows | x86-64 | `dut-x86_64-pc-windows-msvc.zip` |
 | Windows | arm64 | `dut-aarch64-pc-windows-msvc.zip` |
 
-Linux 版本係靜態連結，唔需要 glibc；自行用精簡容器時仍要裝 `ca-certificates`，憑證放喺其他位置可以用 `SSL_CERT_FILE`。Windows 版本已包含 C runtime。發佈構建用 fat LTO 並移除符號；panic 會終止進程，部署時要設自動重啟。本機用 `cargo build --profile dist` 就得到相同 profile 嘅 `target/dist/dut`，編譯會耐過 release。來源證明要視乎倉庫可見性同工作流程支援：
+Linux 版本係靜態連結，唔需要 glibc；自行用精簡容器時仍要裝 `ca-certificates`，憑證放喺其他位置可以用 `SSL_CERT_FILE`。Windows 版本已包含 C runtime。發佈構建用 fat LTO 並移除符號；panic 會終止進程，部署時要設自動重啟。本機用 `cargo build --profile dist` 就得到相同 profile 嘅 `target/dist/dut`，編譯會耐過 release。
+
+倉庫已經公開，之後發佈嘅程式壓縮檔同容器映像，工作流程會附上 GitHub 簽署嘅構建來源證明。可以咁驗證壓縮檔：
 
 ```bash
 gh attestation verify dut-x86_64-unknown-linux-musl.tar.gz -R JimmyRice/Dut
