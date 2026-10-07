@@ -27,6 +27,7 @@
 - [15. 模拟全网状态](#mock-line-status)
 - [16. 模拟单线到站板](#mock-next-trains)
 - [17. 模拟全站到站板](#mock-station-next-trains)
+- [18. 模拟事件流](#mock-events)
 - [错误码](#errors)
 - [附录 A：线路代码](#line-codes)
 - [附录 B：车站代码](#station-codes)
@@ -36,7 +37,7 @@
 
 ## 概览
 
-本地 base URL 为 `http://127.0.0.1:3000`。全部路由位于 `/api` 下，使用 `GET`；健康检查也支持 `HEAD`。目前没有鉴权。JSON 响应使用 UTF-8 `application/json`；原始文件使用 `text/csv; charset=utf-8`。健康检查没有 body 或 content type。gzip 通过 `Accept-Encoding` 协商。Mock 路由需要通过 `--mock-api` 或 `DUT_MOCK_API` 启用。
+本地 base URL 为 `http://127.0.0.1:3000`。全部路由位于 `/api` 下，使用 `GET`；健康检查也支持 `HEAD`。目前没有鉴权。JSON 响应使用 UTF-8 `application/json`；原始文件使用 `text/csv; charset=utf-8`；模拟事件流使用 `text/event-stream`。健康检查没有 body 或 content type。gzip 通过 `Accept-Encoding` 协商。Mock 路由需要通过 `--mock-api` 或 `DUT_MOCK_API` 启用。
 
 | 方法 | URL | 用途 |
 | --- | --- | --- |
@@ -57,6 +58,7 @@
 | `GET` | `/api/mock/lines/status` | 模拟服务状态 |
 | `GET` | `/api/mock/lines/{line}/stations/{station}/next-trains` | 模拟单线到站板 |
 | `GET` | `/api/mock/stations/{station}/next-trains` | 模拟全站到站板 |
+| `GET` | `/api/mock/events` | 模拟线路状态事件（Server-Sent Events）；需启用 |
 
 <a id="conventions"></a>
 
@@ -1425,13 +1427,59 @@ curl -i 'http://127.0.0.1:3000/api/mock/stations/ADM/next-trains?scenario=partia
 
 字段、部分成功及聚合新鲜度遵循[全站板](#station-next-trains)。场景与第 16 节一致。Seed 选择一条途经线进行延误、特别安排或部分故障。部分故障有其他线成功则为 `200`，单线站则为 `502`。先验证车站路径，再验证查询参数。错误：`400 unknown_scenario`、`400 invalid_query`、`404 unknown_station`、未启用时的 `404 not_found`，全部失败时为 `502 upstream_unavailable`。
 
+<a id="mock-events"></a>
+
+## 18. 模拟事件流
+
+```http
+GET /api/mock/events
+```
+
+没有路径参数。
+
+| 查询 | 含义 |
+| --- | --- |
+| `scenario`、`seed` | 见 [Mock 共同行为](#mock-api)。场景即第 14 节的 `line_status` 场景 |
+| `interval` | 可选，两次变更之间的整数秒数，1–60；默认 5 |
+
+```bash
+curl -N 'http://127.0.0.1:3000/api/mock/events?scenario=delayed&seed=7&interval=2'
+```
+
+`200 OK`，`text/event-stream`。连接保持打开，直至客户端断开；请使用 `curl -N` 或 `EventSource`。每个事件有 `event:` 名称，`data:` 为一行 JSON。样本取自运行中的 Mock 服务；两个 `line_status` 事件是同一宗事故及其恢复，相隔两秒。
+
+```
+event: hello
+data: {"server_time":"2026-10-08T01:25:49+08:00"}
+
+event: line_status
+data: {"observed_at":"2026-10-08T01:25:51+08:00","line":{"code":"DRL","name":{"en":"Disneyland Resort Line","tc":"迪士尼綫"}},"color":"#F550A6","previous":{"condition":"normal","display":"green","message":null},"current":{"condition":"delayed","display":"yellow","message":"Due to a signalling fault at Disneyland Resort Station, Disneyland Resort Line train service is delayed. Passengers please allow extra travelling time."}}
+
+event: line_status
+data: {"observed_at":"2026-10-08T01:25:53+08:00","line":{"code":"DRL","name":{"en":"Disneyland Resort Line","tc":"迪士尼綫"}},"color":"#F550A6","previous":{"condition":"delayed","display":"yellow","message":"Due to a signalling fault at Disneyland Resort Station, Disneyland Resort Line train service is delayed. Passengers please allow extra travelling time."},"current":{"condition":"normal","display":"green","message":null}}
+```
+
+连接后立即发送 `hello`，之后每隔 `interval` 发送一批变更，并循环：报告场景中的事故、服务恢复，再重新开始。Seed 选择受影响的线路和措辞，方式与状态路由相同，因此每个事件就是第 15 节两次读数之间的差异。全网场景（`typhoon_signal`、`non_service_hours`）每条线发送一个事件，同在一批。`normal`、`stale` 和 `upstream_unavailable` 没有变化，因此流只发送 `hello`，之后除保活注释外保持安静。
+
+| 事件 | Data 字段 | 类型 | 含义 |
+| --- | --- | --- | --- |
+| `hello` | `server_time` | string | RFC 3339 时间，连接打开时发送一次 |
+| `line_status` | `observed_at` | string | 发现变更的时间 |
+| | `line` | object | 线路的 `{ code, name }` |
+| | `color` | string | 线路颜色，同[线路](#lines) |
+| | `previous`、`current` | object | 变更前后线路的 `condition`、`display` 与 `message`，含义同[第 2 节](#line-status) |
+
+事件只是提示，不是日志：不会重放，没有 `id`，重连的客户端会错过期间发生的事。连接或重连后，请从状态路由取得当前状态。正式服务暂时没有事件流；此路由先固定 App 可以依据的形状。
+
+Header：`Cache-Control: no-cache`；`X-Accel-Buffering: no`，避免 nginx 扣住事件；以及模拟的 `x-mock-scenario` 和 `x-mock-seed`。响应不会经 gzip 压缩。每 15 秒发送一行注释（`:`），让闲置连接保持打开。错误：`interval` 格式错误或超出范围为 `400 invalid_query`，另有 `400 unknown_scenario`，未启用时为 `404 not_found`。模拟的故障不会以 `502` 结束流。
+
 <a id="errors"></a>
 
 ## 错误码
 
 | HTTP | code | 原因 |
 | --- | --- | --- |
-| 400 | `invalid_query` | Mock 参数格式错误或重复，含无效 u64 seed |
+| 400 | `invalid_query` | Mock 参数格式错误或重复，含无效 u64 seed 或超出范围的 `interval` |
 | 400 | `unknown_scenario` | 该接口未知的场景 |
 | 404 | `not_found` | 未知路由或 Mock 未启用 |
 | 404 | `unknown_line` | 未知线路代码 |
@@ -1483,6 +1531,7 @@ curl -i 'http://127.0.0.1:3000/api/mock/stations/ADM/next-trains?scenario=partia
 
 | 日期 | 变更 |
 | --- | --- |
+| 2026-10-08 | 新增需启用的 Mock 路由 `GET /api/mock/events`：以 Server-Sent Events 推送模拟的 `line_status` 变更，支持 `scenario`、`seed` 和 `interval`。正式契约不变。 |
 | 2026-10-07 | 文档重写为英文，新增粤语及国语版本。明确 no-cache、重启行为、健康事件及推送规划。HTTP 契约不变，保留原有样本。 |
 | 2026-10-02 | 不兼容：正式和 Mock 列车的 `platform` 整数改为 `platforms` 整数数组。机场支持 `[1, 3]`／`[2, 4]`，未知值用 `[]` 并保留列车，修复此前 `1/3` 导致机场板失败。 |
 | 2026-10-02 | 新增四个需启用的 Mock 路由，支持场景／seed、实际值 header 及 `invalid_query`／`unknown_scenario`。正式契约不变。 |

@@ -20,8 +20,10 @@ mod platforms;
 mod scenario;
 mod seed;
 mod simulated;
+mod status_changes;
 mod timetable;
 
 pub use scenario::{BoardScenario, Scenario, ScenarioChoice, StatusScenario, UnknownScenario};
 pub use seed::Seed;
 pub use simulated::{SimulatedLineStatus, SimulatedNextTrains};
+pub use status_changes::SimulatedStatusChanges;

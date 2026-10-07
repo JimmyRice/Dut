@@ -12,6 +12,16 @@ pub(crate) struct MockQuery {
     pub seed: Option<u64>,
 }
 
+/// The query string of `GET /api/mock/events`: the scenario and seed every
+/// mock route takes, and how often the simulation reports a change.
+#[derive(Debug, Deserialize)]
+pub(crate) struct MockEventsQuery {
+    pub scenario: Option<String>,
+    pub seed: Option<u64>,
+    /// Seconds between changes.
+    pub interval: Option<u64>,
+}
+
 /// `GET /api/mock/scenarios`: what each mock route can simulate.
 #[derive(Debug, Serialize)]
 pub(crate) struct ScenariosResponse {

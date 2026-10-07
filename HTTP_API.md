@@ -27,6 +27,7 @@ This is the client contract for Dut. Update endpoint URLs, methods, parameters, 
 - [15. Simulated network status](#mock-line-status)
 - [16. Simulated board on one line](#mock-next-trains)
 - [17. Simulated boards across a station](#mock-station-next-trains)
+- [18. Simulated event stream](#mock-events)
 - [Error codes](#errors)
 - [Appendix A: line codes](#line-codes)
 - [Appendix B: station codes](#station-codes)
@@ -36,7 +37,7 @@ This is the client contract for Dut. Update endpoint URLs, methods, parameters, 
 
 ## Overview
 
-The local base URL is `http://127.0.0.1:3000`. All routes live under `/api` and use `GET`; health also supports `HEAD`. There is no authentication. JSON responses use `application/json` with UTF-8; source files use `text/csv; charset=utf-8`. Health has no body or content type. gzip is negotiated through `Accept-Encoding`. Mock routes require `--mock-api` or `DUT_MOCK_API`.
+The local base URL is `http://127.0.0.1:3000`. All routes live under `/api` and use `GET`; health also supports `HEAD`. There is no authentication. JSON responses use `application/json` with UTF-8; source files use `text/csv; charset=utf-8`; the simulated event stream uses `text/event-stream`. Health has no body or content type. gzip is negotiated through `Accept-Encoding`. Mock routes require `--mock-api` or `DUT_MOCK_API`.
 
 | Method | URL | Purpose |
 | --- | --- | --- |
@@ -57,6 +58,7 @@ The local base URL is `http://127.0.0.1:3000`. All routes live under `/api` and 
 | `GET` | `/api/mock/lines/status` | Simulated service status |
 | `GET` | `/api/mock/lines/{line}/stations/{station}/next-trains` | Simulated board for one line |
 | `GET` | `/api/mock/stations/{station}/next-trains` | Simulated boards for a station |
+| `GET` | `/api/mock/events` | Simulated line status events (Server-Sent Events); opt-in |
 
 <a id="conventions"></a>
 
@@ -1425,13 +1427,59 @@ curl -i 'http://127.0.0.1:3000/api/mock/stations/ADM/next-trains?scenario=partia
 
 Fields, partial success, and aggregate freshness match [station boards](#station-next-trains). Scenarios are the same as section 16. The seed selects one serving line for delay, special arrangement, or partial outage. A partial outage returns `200` when another line succeeds, but `502` at a single-line station. Invalid station paths are checked before query parameters. Errors: `400 unknown_scenario`, `400 invalid_query`, `404 unknown_station`, disabled-route `404 not_found`, or `502 upstream_unavailable` when all boards fail.
 
+<a id="mock-events"></a>
+
+## 18. Simulated event stream
+
+```http
+GET /api/mock/events
+```
+
+No path parameters.
+
+| Query | Meaning |
+| --- | --- |
+| `scenario`, `seed` | See [shared mock behaviour](#mock-api). Scenarios are the `line_status` ones from section 14 |
+| `interval` | Optional whole seconds between changes, 1–60; default 5 |
+
+```bash
+curl -N 'http://127.0.0.1:3000/api/mock/events?scenario=delayed&seed=7&interval=2'
+```
+
+`200 OK`, `text/event-stream`. The stream stays open until the client disconnects; use `curl -N` or an `EventSource`. Each event has an `event:` name and one line of JSON in `data:`. Example captured from the running mock service; the two `line_status` events are one incident and its recovery, two seconds apart.
+
+```
+event: hello
+data: {"server_time":"2026-10-08T01:25:49+08:00"}
+
+event: line_status
+data: {"observed_at":"2026-10-08T01:25:51+08:00","line":{"code":"DRL","name":{"en":"Disneyland Resort Line","tc":"迪士尼綫"}},"color":"#F550A6","previous":{"condition":"normal","display":"green","message":null},"current":{"condition":"delayed","display":"yellow","message":"Due to a signalling fault at Disneyland Resort Station, Disneyland Resort Line train service is delayed. Passengers please allow extra travelling time."}}
+
+event: line_status
+data: {"observed_at":"2026-10-08T01:25:53+08:00","line":{"code":"DRL","name":{"en":"Disneyland Resort Line","tc":"迪士尼綫"}},"color":"#F550A6","previous":{"condition":"delayed","display":"yellow","message":"Due to a signalling fault at Disneyland Resort Station, Disneyland Resort Line train service is delayed. Passengers please allow extra travelling time."},"current":{"condition":"normal","display":"green","message":null}}
+```
+
+The stream sends `hello` at once, then one batch of changes after each `interval`, in a cycle: the scenario's incident is reported, service recovers, and the cycle starts again. The seed picks the affected line and wording exactly as it does for the status route, so each event is the difference between two readings of section 15. A network-wide scenario (`typhoon_signal`, `non_service_hours`) sends one event per line, all in one batch. `normal`, `stale`, and `upstream_unavailable` change nothing, so the stream says `hello` and then stays silent apart from keep-alive comments.
+
+| Event | Data field | Type | Meaning |
+| --- | --- | --- | --- |
+| `hello` | `server_time` | string | RFC 3339 time, sent once when the stream opens |
+| `line_status` | `observed_at` | string | When the change was noticed |
+| | `line` | object | `{ code, name }` of the line |
+| | `color` | string | The line's colour, as in [lines](#lines) |
+| | `previous`, `current` | object | The line's `condition`, `display`, and `message` before and after, in the terms of [section 2](#line-status) |
+
+Events are hints, not a log: nothing is replayed, there is no `id`, and a client that reconnects misses what happened meanwhile. After connecting or reconnecting, fetch the current state from the status route. The real service has no event stream yet; this route fixes the shape the app can build against.
+
+Headers: `Cache-Control: no-cache`, `X-Accel-Buffering: no` so that nginx does not hold events back, and the `x-mock-scenario` and `x-mock-seed` of the simulation. The response is never gzipped. A comment line (`:`) every 15 seconds keeps idle connections open. Errors: `400 invalid_query` for a malformed or out-of-range `interval`, `400 unknown_scenario`, or disabled-route `404 not_found`. A simulated outage never ends the stream with `502`.
+
 <a id="errors"></a>
 
 ## Error codes
 
 | HTTP | code | Cause |
 | --- | --- | --- |
-| 400 | `invalid_query` | Malformed or repeated mock query parameter, including invalid u64 seed |
+| 400 | `invalid_query` | Malformed or repeated mock query parameter, including invalid u64 seed or out-of-range `interval` |
 | 400 | `unknown_scenario` | Unknown scenario for this endpoint |
 | 404 | `not_found` | Unknown route or disabled mock API |
 | 404 | `unknown_line` | Unknown line code |
@@ -1483,6 +1531,7 @@ Stations are grouped in compiled line order. A shared code is the same interchan
 
 | Date | Change |
 | --- | --- |
+| 2026-10-08 | Added the opt-in mock route `GET /api/mock/events`: a Server-Sent Events stream of simulated `line_status` changes, with `scenario`, `seed`, and `interval`. Real contracts unchanged. |
 | 2026-10-07 | Documentation rewritten in English with Cantonese and Mandarin editions. Clarified no-cache, restart behaviour, health events, and planned push configuration. No HTTP contract change. Existing captures retained. |
 | 2026-10-02 | Breaking: train `platform` integer became `platforms` integer array in real and mock endpoints. Airport supports `[1, 3]` and `[2, 4]`; unreadable values use `[]` without dropping trains. Fixes Airport boards previously failing on `1/3`. |
 | 2026-10-02 | Added four opt-in mock routes with scenario/seed, resolution headers, and `invalid_query` / `unknown_scenario` errors. Real contracts unchanged. |

@@ -375,6 +375,7 @@ Adapters expose `probe()` for bootstrap’s connectivity check. `RefreshingCache
 | `Seed` | new(u64), DEFAULT (0), fresh(), value(); named defaults to DEFAULT, random without seed generates a new one |
 | `SimulatedNextTrains::new(scenario, seed)` | board(line, station).await and station_boards(station).await use NextTrainService; incidents select the requested line or one serving line |
 | `SimulatedLineStatus::new(scenario, seed)` | `status() -> Result<Snapshot<NetworkStatus>, SourceUnavailable>` |
+| `SimulatedStatusChanges::new(scenario, seed)` | `batches() -> Result<impl Iterator<Item = Vec<LineStatusChange>>, SourceUnavailable>`: an endless cycle of incident then recovery, each batch the domain diff of two simulated feeds; empty when the scenario changes nothing |
 
 ```rust
 let (scenario, seed) = "peak"
