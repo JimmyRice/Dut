@@ -4,7 +4,7 @@
 #
 # Licences are deliberately not checked, so there is no [licenses] section
 # and a plain `cargo deny check` would reject every dependency. The CI
-# workflow in .github/workflows/deny.yml names the same three checks.
+# workflow in .github/workflows/quality.yml names the same three checks.
 
 [graph]
 all-features = true

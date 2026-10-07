@@ -221,7 +221,7 @@ cargo test
 cargo deny check advisories bans sources
 ```
 
-完成改动前，请在 workspace 根目录运行以上检查。`cargo deny` 需先执行 `cargo install cargo-deny --locked`，检查依赖的安全公告、被撤回的版本和未知来源，不检查许可证；CI 在每次 push 和 pull request 时运行它。局部开发可加 `-p <crate>`。测试可重现且离线：时间行为使用暂停的 Tokio 时钟，上游使用 wiremock 和实际抓取样本。路由测试组装完整 App；macOS 会提高文件描述符上限，以支持并行测试服务器。
+完成改动前，请在 workspace 根目录运行以上检查。`cargo deny` 需先执行 `cargo install cargo-deny --locked`，检查依赖的安全公告、被撤回的版本和未知来源，不检查许可证；Code quality workflow 会在每次 push 和 pull request 时运行以上四项检查。局部开发可加 `-p <crate>`。测试可重现且离线：时间行为使用暂停的 Tokio 时钟，上游使用 wiremock 和实际抓取样本。路由测试组装完整 App；macOS 会提高文件描述符上限，以支持并行测试服务器。
 
 ```text
 src/                 composition root, configuration, startup

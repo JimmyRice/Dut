@@ -120,6 +120,6 @@ cargo test
 cargo deny check advisories bans sources
 ```
 
-The `cargo-deny` check does not cover licences (see `deny.toml`); CI runs the same command on every push and pull request.
+The `cargo-deny` check does not cover licences (see `deny.toml`). The Code quality workflow runs all four commands on every push and pull request.
 
 See `ARCHITECTURE.md` for the dependency direction and feature workflow.
