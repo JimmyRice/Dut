@@ -1,0 +1,28 @@
+# Configuration for cargo-deny. Run it as
+#
+#     cargo deny check advisories bans sources
+#
+# Licences are deliberately not checked, so there is no [licenses] section
+# and a plain `cargo deny check` would reject every dependency. The CI
+# workflow in .github/workflows/deny.yml names the same three checks.
+
+[graph]
+all-features = true
+
+[advisories]
+# A yanked release is one its author withdrew, usually for a defect.
+yanked = "deny"
+
+[bans]
+# Two versions of one crate are common while the ecosystem catches up, and
+# cost binary size, so they are listed rather than failed.
+multiple-versions = "warn"
+# `*` would let any release, including a hijacked one, satisfy a dependency.
+# The workspace crates depend on each other by path, which is fine.
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
