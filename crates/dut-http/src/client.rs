@@ -1,12 +1,12 @@
 //! The shared client, and the requests and responses it handles.
 
-use std::{error::Error, time::Duration};
+use std::{error::Error, mem, time::Duration};
 
 use bytes::Bytes;
 use jiff::Timestamp;
 use reqwest::{
     StatusCode, Url,
-    header::{AGE, CACHE_CONTROL, HeaderMap, LAST_MODIFIED},
+    header::{AGE, CACHE_CONTROL, HeaderMap, HeaderName, LAST_MODIFIED},
 };
 use serde::Deserialize;
 use thiserror::Error;
@@ -100,7 +100,7 @@ impl OutboundHttpClient {
                 UpstreamError::Transport { upstream, cause }
             };
 
-            let response = self
+            let mut response = self
                 .inner
                 .get(url)
                 .timeout(timeout)
@@ -108,16 +108,17 @@ impl OutboundHttpClient {
                 .await
                 .map_err(|cause| transport_error(cause, "send"))?;
             let status = response.status();
-            let headers = response.headers().clone();
+            // Taken rather than cloned: reading the body consumes the response.
+            let headers = mem::take(response.headers_mut());
             let body = response
                 .bytes()
                 .await
                 .map_err(|cause| transport_error(cause, "read_body"))?;
 
             let elapsed_ms = millis(started.elapsed());
-            let cache_control = header_text(&headers, CACHE_CONTROL.as_str());
-            let age = header_text(&headers, AGE.as_str());
-            let last_modified = header_text(&headers, LAST_MODIFIED.as_str());
+            let cache_control = header_text(&headers, CACHE_CONTROL);
+            let age = header_text(&headers, AGE);
+            let last_modified = header_text(&headers, LAST_MODIFIED);
 
             if !status.is_success() {
                 warn!(
@@ -230,6 +231,6 @@ fn failure_kind(error: &reqwest::Error) -> &'static str {
     }
 }
 
-fn header_text<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+fn header_text(headers: &HeaderMap, name: HeaderName) -> Option<&str> {
     headers.get(name).and_then(|value| value.to_str().ok())
 }
