@@ -8,7 +8,7 @@ use reqwest::{
     StatusCode, Url,
     header::{AGE, CACHE_CONTROL, HeaderMap, LAST_MODIFIED},
 };
-use serde::de::DeserializeOwned;
+use serde::Deserialize;
 use thiserror::Error;
 use tokio::time::Instant;
 use tracing::{Instrument, error, info, info_span, warn};
@@ -151,7 +151,9 @@ impl OutboundHttpClient {
 
 impl UpstreamResponse {
     /// Decodes the body as JSON, logging an excerpt of it when that fails.
-    pub fn json<T: DeserializeOwned>(&self) -> Result<T, serde_json::Error> {
+    ///
+    /// `T` may borrow text from the body, so decoding need not copy it.
+    pub fn json<'a, T: Deserialize<'a>>(&'a self) -> Result<T, serde_json::Error> {
         serde_json::from_slice(&self.body).inspect_err(|decode_error| {
             let excerpt = self.body.get(..BODY_EXCERPT_BYTES).unwrap_or(&self.body);
             error!(

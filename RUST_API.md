@@ -338,7 +338,7 @@ Use `dut-http` and the shared connection pool; never build a client per request.
 | --- | --- |
 | `fetch(UpstreamRequest).await -> Result<UpstreamResponse, UpstreamError>` | GET, read whole body, log start/finish/failure; non-2xx is an error |
 | `UpstreamRequest { upstream, url, timeout }` | Stable log name, URL, per-request timeout |
-| `json::<T>() -> Result<T, serde_json::Error>` | Decode with diagnostic excerpt on failure |
+| `json::<T>() -> Result<T, serde_json::Error>` | Decode with diagnostic excerpt on failure; `T: Deserialize<'a>` may borrow text from the body for as long as the response lives |
 | `ttl_hint() -> Option<Duration>` | Remaining upstream max-age minus Age |
 | `last_modified() -> Option<Timestamp>` | Parsed Last-Modified |
 | `body() -> &Bytes` | Original response bytes |
