@@ -161,7 +161,7 @@ pub(crate) fn hops(
         })
         .collect();
     let side_by_side = path.contains(&FO_TAN) && path.contains(&RACECOURSE);
-    Some(path.len() as i64 - i64::from(side_by_side))
+    Some(i64::try_from(path.len()).ok()? - i64::from(side_by_side))
 }
 
 /// A working, checked at compile time.

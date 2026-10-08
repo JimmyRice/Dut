@@ -149,6 +149,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use dut_core::station;
+
     use super::*;
 
     #[test]
@@ -170,7 +172,7 @@ mod tests {
 
     #[test]
     fn unknown_stations_have_no_name() {
-        let code: StationCode = "XYZ".parse().expect("valid code");
+        let code = station!("XYZ");
 
         let json = serde_json::to_value(StationRef::from(&code)).expect("ref should serialize");
 

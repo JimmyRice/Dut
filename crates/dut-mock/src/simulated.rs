@@ -84,11 +84,11 @@ impl SimulatedNextTrains {
     }
 
     fn incident_line(&self, station: StationCode) -> Option<Line> {
-        let lines = Line::serving(station).count() as u64;
+        let lines = Line::serving(station).count();
         let mut rng = self
             .seed
             .stream(Purpose::Incident, &[text_key(station.as_str())]);
-        Line::serving(station).nth(rng.below(lines) as usize)
+        Line::serving(station).nth(rng.index(lines))
     }
 }
 
@@ -153,7 +153,7 @@ impl Fetch {
             &[
                 text_key(line.code()),
                 text_key(station.as_str()),
-                refresh as u64,
+                refresh.cast_unsigned(),
             ],
         );
         let (fetched_at, freshness) = if boards.scenario == BoardScenario::Stale {
@@ -162,7 +162,7 @@ impl Fetch {
         } else {
             let fetched_at = refresh * BOARD_LIFETIME;
             let fresh_for = (BOARD_LIFETIME - (now - fetched_at)).max(BOARD_MIN_FRESH);
-            let expires_in = Duration::from_secs(fresh_for as u64);
+            let expires_in = Duration::from_secs(u64::try_from(fresh_for).unwrap_or(0));
             (fetched_at, Freshness::Fresh { expires_in })
         };
         let generated_at = fetched_at - rng.between(2, 8);

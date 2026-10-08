@@ -57,17 +57,13 @@ use crate::{
 ///     }
 /// }
 ///
-/// let schedule = Schedule {
-///     interval: Duration::from_secs(60),
-///     first_poll_after: Duration::ZERO,
-///     retry_after: Duration::from_secs(60),
+/// const SCHEDULE: Schedule = Schedule::every(Duration::from_secs(60))
 ///     // The interval plus the request timeout.
-///     fresh_for: Duration::from_secs(70),
-///     stale_if_error: Duration::from_secs(15 * 60),
-///     blind_after: Duration::from_secs(5 * 60),
-/// };
+///     .fresh_for(Duration::from_secs(70))
+///     .stale_if_error(Duration::from_secs(15 * 60))
+///     .blind_after(Duration::from_secs(5 * 60));
 ///
-/// let warnings = dut_poll::spawn(ClearSkies, schedule);
+/// let warnings = dut_poll::spawn(ClearSkies, SCHEDULE);
 ///
 /// // Waits for the first poll, which has only just started.
 /// let snapshot = warnings.snapshot().await?;
@@ -225,14 +221,10 @@ mod tests {
         Duration::from_secs(seconds)
     }
 
-    const SCHEDULE: Schedule = Schedule {
-        interval: seconds(30),
-        first_poll_after: Duration::ZERO,
-        retry_after: seconds(30),
-        fresh_for: seconds(33),
-        stale_if_error: seconds(900),
-        blind_after: seconds(90),
-    };
+    const SCHEDULE: Schedule = Schedule::every(seconds(30))
+        .fresh_for(seconds(33))
+        .stale_if_error(seconds(900))
+        .blind_after(seconds(90));
 
     fn latest(handle: &FeedHandle<u32>) -> Option<u32> {
         handle
@@ -262,10 +254,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn waits_for_the_first_poll_when_asked_to() {
         let (feed, calls) = ScriptedFeed::new([Some(1)]);
-        let schedule = Schedule {
-            first_poll_after: seconds(60),
-            ..SCHEDULE
-        };
+        let schedule = SCHEDULE.first_poll_after(seconds(60));
 
         let handle = spawn(feed, schedule);
         sleep(seconds(59)).await;
@@ -279,11 +268,10 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn retries_a_failed_poll_early_then_returns_to_the_interval() {
         let (feed, calls) = ScriptedFeed::new([None, Some(1)]);
-        let schedule = Schedule {
-            interval: seconds(3_600),
-            retry_after: seconds(60),
-            ..SCHEDULE
-        };
+        let schedule = Schedule::every(seconds(3_600))
+            .retry_after(seconds(60))
+            .stale_if_error(seconds(900))
+            .blind_after(seconds(90));
 
         let handle = spawn(feed, schedule);
         sleep(seconds(1)).await;

@@ -51,11 +51,20 @@ impl StationCode {
     ///
     /// const TSEUNG_KWAN_O: StationCode = StationCode::from_static("TK0");
     /// ```
+    #[expect(
+        clippy::panic,
+        reason = "evaluated in const items, where a panic is a build error"
+    )]
     pub const fn from_static(code: &str) -> Self {
         match ThreeLetters::parse(code.as_bytes()) {
             Some(letters) => Self(letters),
             None => panic!("station code literals must be three ASCII letters"),
         }
+    }
+
+    /// A number that orders codes as `Ord` does, for checks in `const` items.
+    pub(crate) const fn rank(self) -> u32 {
+        self.0.rank()
     }
 
     /// Returns the code as an uppercase string slice.
@@ -140,6 +149,20 @@ impl Station {
     /// use it to match what upstreams publish against this network.
     pub fn all() -> &'static [Self] {
         STATIONS
+    }
+
+    /// Whether `code` is in the station table. Linear, so meant for checks
+    /// of other static tables as they compile; at runtime use
+    /// [`find`](Self::find).
+    pub(crate) const fn is_known(code: StationCode) -> bool {
+        let mut rest = STATIONS;
+        while let [station, tail @ ..] = rest {
+            if station.code.rank() == code.rank() {
+                return true;
+            }
+            rest = tail;
+        }
+        false
     }
 
     const fn new(code: &str, en: &'static str, tc: &'static str) -> Self {
@@ -259,6 +282,21 @@ const STATIONS: &[Station] = &[
 ];
 // END GENERATED STATIONS
 
+// `Station::find` binary searches the table, so it must be sorted, and a
+// code listed twice would make one entry unreachable.
+const _: () = {
+    let mut rest = STATIONS;
+    while let [station, tail @ ..] = rest {
+        if let [next, ..] = tail {
+            assert!(
+                station.code.rank() < next.code.rank(),
+                "the station table must be sorted by code without repeats"
+            );
+        }
+        rest = tail;
+    }
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -284,10 +322,5 @@ mod tests {
         assert_eq!(known.name, Localized::new("Prince Edward", "太子"));
 
         assert!(Station::find(StationCode::from_static("XYZ")).is_none());
-    }
-
-    #[test]
-    fn station_table_is_sorted_and_unique() {
-        assert!(STATIONS.windows(2).all(|pair| pair[0].code < pair[1].code));
     }
 }

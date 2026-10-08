@@ -48,6 +48,19 @@ wiremock = "0.6.5"
 # `pub(crate)`, so `pub` always marks what other crates may use.
 [workspace.lints.rust]
 unreachable_pub = "warn"
+unsafe_code = "forbid"
+
+# The repository rules, checked by the compiler rather than by review:
+# nothing outside tests may panic, index out of bounds, or convert numbers
+# with `as` where the value could change. `clippy.toml` exempts tests.
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+indexing_slicing = "warn"
+cast_possible_truncation = "warn"
+cast_possible_wrap = "warn"
+cast_sign_loss = "warn"
 
 # What release archives and the container image ship: `cargo build --profile
 # dist`. Fat LTO optimises the workspace crates and their dependencies as one

@@ -204,10 +204,7 @@ impl Departures {
         position: usize,
     ) -> Option<TrainArrival> {
         let turns = platforms::at(self.line, self.station, self.direction);
-        let platforms = turns
-            .get(number.rem_euclid(turns.len().max(1) as i64) as usize)
-            .copied()
-            .unwrap_or(Platforms::NONE);
+        let platforms = cyclic(turns, number).copied().unwrap_or(Platforms::NONE);
         // The East Rail Line tells arrivals from departures, which are where
         // a train starts.
         let time_type =
@@ -236,7 +233,11 @@ impl Departures {
         let window = now.div_euclid(LAST_TRAIN_WINDOW);
         let mut rng = self.seed.stream(
             Purpose::LastTrain,
-            &[self.line_key(), self.direction_key(), window as u64],
+            &[
+                self.line_key(),
+                self.direction_key(),
+                window.cast_unsigned(),
+            ],
         );
         Some(window * LAST_TRAIN_WINDOW + rng.between(2 * 60, LAST_TRAIN_WINDOW - 2 * 60))
     }
@@ -282,8 +283,8 @@ impl Schedule {
             workings,
             headway,
             spread: headway * spread_percent / 100,
-            phase: start.below(headway as u64) as i64,
-            turn: start.below(workings.len() as u64) as i64,
+            phase: start.between(0, headway - 1),
+            turn: i64::try_from(start.index(workings.len())).unwrap_or(0),
         }
     }
 
@@ -296,22 +297,29 @@ impl Schedule {
             &[
                 departures.line_key(),
                 departures.direction_key(),
-                number as u64,
+                number.cast_unsigned(),
             ],
         );
         let deviation = rng.between(-self.spread, self.spread);
         let cancelled = conditions.delayed && rng.percent(12);
         let via_racecourse =
             conditions.race_day && departures.line == Line::EastRail && rng.percent(35);
-        let turn = (number + self.turn).rem_euclid(self.workings.len().max(1) as i64);
 
         Some(Train {
             passes_reference: number * self.headway + self.phase + deviation,
-            working: *self.workings.get(turn as usize)?,
+            working: *cyclic(self.workings, number + self.turn)?,
             cancelled,
             via_racecourse,
         })
     }
+}
+
+/// The item `number` lands on when `items` repeat end to end in both
+/// directions, or `None` when there are no items.
+fn cyclic<T>(items: &[T], number: i64) -> Option<&T> {
+    let len = i64::try_from(items.len()).ok()?;
+    let index = usize::try_from(number.checked_rem_euclid(len)?).ok()?;
+    items.get(index)
 }
 
 /// The time the Next Train API publishes for a train due at `due`: whole
@@ -338,10 +346,6 @@ mod tests {
         BoardScenario::LateNight,
     ];
 
-    fn code(code: &str) -> StationCode {
-        code.parse().expect("test station code should be valid")
-    }
-
     /// 08:00 HKT on the day of the capture.
     fn morning() -> Timestamp {
         "2026-10-02T00:00:00Z".parse().expect("valid timestamp")
@@ -351,10 +355,15 @@ mod tests {
         Timestamp::from_second(morning().as_second() + seconds).expect("valid timestamp")
     }
 
-    fn board(line: Line, station: &str, scenario: BoardScenario, at: Timestamp) -> NextTrainBoard {
+    fn board(
+        line: Line,
+        station: StationCode,
+        scenario: BoardScenario,
+        at: Timestamp,
+    ) -> NextTrainBoard {
         simulate(
             line,
-            code(station),
+            station,
             Conditions::of(scenario, true),
             Seed::DEFAULT,
             at,
@@ -380,8 +389,8 @@ mod tests {
         for line in Line::with_next_train() {
             for &station in line.stations() {
                 for scenario in SERVICE {
-                    for seed in 0..3 {
-                        let generated_at = later(seed as i64 * 7_919);
+                    for seed in 0..3_u64 {
+                        let generated_at = later(seed.cast_signed() * 7_919);
                         let board = simulate(
                             line,
                             station,
@@ -432,7 +441,12 @@ mod tests {
 
     #[test]
     fn a_running_line_lists_four_trains_away_from_its_termini() {
-        let board = board(Line::KwunTong, "KOT", BoardScenario::OffPeak, morning());
+        let board = board(
+            Line::KwunTong,
+            station!("KOT"),
+            BoardScenario::OffPeak,
+            morning(),
+        );
 
         assert_eq!(board.trains.up.len(), 4);
         assert_eq!(board.trains.down.len(), 4);
@@ -441,11 +455,11 @@ mod tests {
     #[test]
     fn a_terminus_lists_no_trains_towards_itself() {
         let cases = [
-            (Line::TseungKwanO, "POA", Direction::Up),
-            (Line::TseungKwanO, "LHP", Direction::Up),
-            (Line::EastRail, "LOW", Direction::Up),
-            (Line::EastRail, "ADM", Direction::Down),
-            (Line::DisneylandResort, "SUN", Direction::Up),
+            (Line::TseungKwanO, station!("POA"), Direction::Up),
+            (Line::TseungKwanO, station!("LHP"), Direction::Up),
+            (Line::EastRail, station!("LOW"), Direction::Up),
+            (Line::EastRail, station!("ADM"), Direction::Down),
+            (Line::DisneylandResort, station!("SUN"), Direction::Up),
         ];
         for (line, station, direction) in cases {
             let board = board(line, station, BoardScenario::Peak, morning());
@@ -460,11 +474,21 @@ mod tests {
 
     #[test]
     fn a_branch_station_lists_only_trains_on_its_branch() {
-        let up_at_hang_hau = board(Line::TseungKwanO, "HAH", BoardScenario::Peak, morning());
-        let down_by_day = board(Line::TseungKwanO, "LHP", BoardScenario::OffPeak, morning());
+        let up_at_hang_hau = board(
+            Line::TseungKwanO,
+            station!("HAH"),
+            BoardScenario::Peak,
+            morning(),
+        );
+        let down_by_day = board(
+            Line::TseungKwanO,
+            station!("LHP"),
+            BoardScenario::OffPeak,
+            morning(),
+        );
         let down_at_night = board(
             Line::TseungKwanO,
-            "LHP",
+            station!("LHP"),
             BoardScenario::LateNight,
             morning(),
         );
@@ -541,8 +565,18 @@ mod tests {
 
     #[test]
     fn trains_move_on_with_the_clock() {
-        let earlier = board(Line::TsuenWan, "MOK", BoardScenario::OffPeak, morning());
-        let two_minutes_on = board(Line::TsuenWan, "MOK", BoardScenario::OffPeak, later(120));
+        let earlier = board(
+            Line::TsuenWan,
+            station!("MOK"),
+            BoardScenario::OffPeak,
+            morning(),
+        );
+        let two_minutes_on = board(
+            Line::TsuenWan,
+            station!("MOK"),
+            BoardScenario::OffPeak,
+            later(120),
+        );
 
         let horizon = earlier.trains.up.last().map(|train| train.arrival_at);
         for train in &two_minutes_on.trains.up {
@@ -563,8 +597,18 @@ mod tests {
 
     #[test]
     fn the_next_station_sees_the_same_train_a_stop_later() {
-        let at_kowloon_tong = board(Line::KwunTong, "KOT", BoardScenario::OffPeak, morning());
-        let at_lok_fu = board(Line::KwunTong, "LOF", BoardScenario::OffPeak, morning());
+        let at_kowloon_tong = board(
+            Line::KwunTong,
+            station!("KOT"),
+            BoardScenario::OffPeak,
+            morning(),
+        );
+        let at_lok_fu = board(
+            Line::KwunTong,
+            station!("LOF"),
+            BoardScenario::OffPeak,
+            morning(),
+        );
 
         let gaps: Vec<i64> = at_kowloon_tong
             .trains
@@ -578,7 +622,13 @@ mod tests {
 
     #[test]
     fn trains_come_more_often_in_rush_hour_than_late_at_night() {
-        let span_at = |scenario| span(&board(Line::Island, "CAB", scenario, morning()).trains.up);
+        let span_at = |scenario| {
+            span(
+                &board(Line::Island, station!("CAB"), scenario, morning())
+                    .trains
+                    .up,
+            )
+        };
 
         assert!(span_at(BoardScenario::Peak) < span_at(BoardScenario::OffPeak));
         assert!(span_at(BoardScenario::OffPeak) < span_at(BoardScenario::LateNight));
@@ -586,8 +636,18 @@ mod tests {
 
     #[test]
     fn east_rail_line_trains_depart_where_they_start() {
-        let admiralty = board(Line::EastRail, "ADM", BoardScenario::Peak, morning());
-        let sha_tin = board(Line::EastRail, "SHT", BoardScenario::Peak, morning());
+        let admiralty = board(
+            Line::EastRail,
+            station!("ADM"),
+            BoardScenario::Peak,
+            morning(),
+        );
+        let sha_tin = board(
+            Line::EastRail,
+            station!("SHT"),
+            BoardScenario::Peak,
+            morning(),
+        );
 
         assert!(admiralty.trains.up.iter().all(|train| {
             train.time_type == Some(TimeType::Departure) && train.platforms == Platforms::one(7)
@@ -603,7 +663,12 @@ mod tests {
 
     #[test]
     fn airport_express_trains_stand_at_two_platforms_at_airport() {
-        let airport = board(Line::AirportExpress, "AIR", BoardScenario::Peak, morning());
+        let airport = board(
+            Line::AirportExpress,
+            station!("AIR"),
+            BoardScenario::Peak,
+            morning(),
+        );
 
         assert!(!airport.trains.up.is_empty() && !airport.trains.down.is_empty());
         assert!(
@@ -624,14 +689,19 @@ mod tests {
 
     #[test]
     fn racecourse_opens_on_race_days_only() {
-        let ordinary = board(Line::EastRail, "RAC", BoardScenario::OffPeak, morning());
+        let ordinary = board(
+            Line::EastRail,
+            station!("RAC"),
+            BoardScenario::OffPeak,
+            morning(),
+        );
         assert!(ordinary.trains.up.is_empty() && ordinary.trains.down.is_empty());
 
         let race_day = (0..10)
             .map(|step| {
                 board(
                     Line::EastRail,
-                    "RAC",
+                    station!("RAC"),
                     BoardScenario::RaceDay,
                     later(step * 600),
                 )
@@ -641,7 +711,12 @@ mod tests {
         assert!(!race_day.is_empty());
         assert!(race_day.iter().all(|train| train.via_racecourse));
 
-        let fo_tan = board(Line::EastRail, "FOT", BoardScenario::RaceDay, morning());
+        let fo_tan = board(
+            Line::EastRail,
+            station!("FOT"),
+            BoardScenario::RaceDay,
+            morning(),
+        );
         assert!(!fo_tan.trains.up.is_empty());
         assert!(fo_tan.trains.up.iter().all(|train| !train.via_racecourse));
     }
@@ -650,7 +725,7 @@ mod tests {
     fn no_trains_run_outside_service_hours() {
         let board = board(
             Line::TsuenWan,
-            "MOK",
+            station!("MOK"),
             BoardScenario::NonServiceHours,
             morning(),
         );
@@ -667,9 +742,9 @@ mod tests {
     #[test]
     fn once_the_last_train_leaves_none_follows() {
         for (line, station) in [
-            (Line::KwunTong, "KOT"),
-            (Line::Island, "ADM"),
-            (Line::TuenMa, "HUH"),
+            (Line::KwunTong, station!("KOT")),
+            (Line::Island, station!("ADM")),
+            (Line::TuenMa, station!("HUH")),
         ] {
             for direction in Direction::ALL {
                 let mut emptied = false;
@@ -709,7 +784,12 @@ mod tests {
 
     #[test]
     fn a_delayed_line_is_flagged_and_its_trains_come_less_often() {
-        let delayed = board(Line::KwunTong, "KOT", BoardScenario::Delayed, morning());
+        let delayed = board(
+            Line::KwunTong,
+            station!("KOT"),
+            BoardScenario::Delayed,
+            morning(),
+        );
         let unaffected = simulate(
             Line::KwunTong,
             station!("KOT"),
@@ -724,7 +804,7 @@ mod tests {
             (0..20)
                 .map(|step| {
                     span(
-                        &board(Line::KwunTong, "KOT", scenario, later(step * 300))
+                        &board(Line::KwunTong, station!("KOT"), scenario, later(step * 300))
                             .trains
                             .up,
                     )
@@ -738,7 +818,7 @@ mod tests {
     fn only_the_affected_line_carries_the_notice() {
         let affected = board(
             Line::Island,
-            "ADM",
+            station!("ADM"),
             BoardScenario::SpecialArrangement,
             morning(),
         );

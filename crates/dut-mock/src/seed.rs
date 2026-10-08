@@ -88,8 +88,16 @@ impl Rng {
 
     /// Uniform in `low..=high`.
     pub(crate) fn between(&mut self, low: i64, high: i64) -> i64 {
-        let span = high.saturating_sub(low).saturating_add(1).max(0) as u64;
-        low.saturating_add(self.below(span) as i64)
+        let span = u64::try_from(high.saturating_sub(low).saturating_add(1)).unwrap_or(0);
+        low.saturating_add_unsigned(self.below(span))
+    }
+
+    /// Uniform in `0..len`, or 0 when `len` is 0: an index into a slice of
+    /// `len` items.
+    pub(crate) fn index(&mut self, len: usize) -> usize {
+        let bound = u64::try_from(len).unwrap_or(u64::MAX);
+        // A draw below `len` always fits back into `usize`.
+        usize::try_from(self.below(bound)).unwrap_or(0)
     }
 
     /// True `percent` times in a hundred.
@@ -99,7 +107,7 @@ impl Rng {
 
     /// One of `items`, or `None` if there are none.
     pub(crate) fn pick<'a, T>(&mut self, items: &'a [T]) -> Option<&'a T> {
-        items.get(self.below(items.len() as u64) as usize)
+        items.get(self.index(items.len()))
     }
 }
 
@@ -162,7 +170,7 @@ mod tests {
         let mut seen = [false; 5];
 
         for _ in 0..200 {
-            seen[rng.below(5) as usize] = true;
+            seen[rng.index(5)] = true;
         }
 
         assert_eq!(seen, [true; 5]);

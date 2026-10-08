@@ -222,9 +222,9 @@ pub trait ReferenceDataSource: Send + Sync + 'static {
 | `source() -> SourceId` | Stable source identity |
 | `FeedState<T>` | `latest() -> Option<&Polled<T>>`, `health()`, `attempts()` |
 | `Polled<T>` | `value() -> &Arc<T>`, `fetched_at()` |
-| `Schedule` | `interval`, `first_poll_after`, `retry_after`, `fresh_for`, `stale_if_error`, `blind_after`: all Duration |
+| `Schedule` | `const` builder: `Schedule::every(interval)`, then `.first_poll_after(d)`, `.retry_after(d)`, `.fresh_for(d)`, `.stale_if_error(d)`, `.blind_after(d)`; built in `const` items, where a zero interval or retry delay, or freshness shorter than the interval, fails the build |
 
-Borrow a watch value briefly; holding it prevents the poller from publishing. `FeedHandle<NetworkStatus>` implements `LineStatusSource`, and `FeedHandle<ReferenceData>` implements `ReferenceDataSource`. `retry_after` below the interval retries sooner after failure; at or above the interval keeps the normal schedule. Defaults are in [polled feeds](ARCHITECTURE.md#polled-feeds).
+Borrow a watch value briefly; holding it prevents the poller from publishing. `FeedHandle<NetworkStatus>` implements `LineStatusSource`, and `FeedHandle<ReferenceData>` implements `ReferenceDataSource`. `retry_after` below the interval retries sooner after failure; at or above the interval keeps the normal schedule. Unset steps default to: first poll at once, retry after one interval, fresh for one interval, never stale, never blind. Defaults are in [polled feeds](ARCHITECTURE.md#polled-feeds).
 
 <a id="nexttrainservice"></a>
 
@@ -290,7 +290,7 @@ All modules below live under `dut_core::domain`. Parse input once at the boundar
 | `Station` | `find(code)` validates membership and provides names; `all()` is code-sorted |
 | `Direction`, `ByDirection<T>` | MTR Up/Down; `ByDirection::get(direction)` |
 
-A syntactically valid station code can still be unknown. Check `Station::find` or `Line::serves`. `scripts/sync-network.py --write` regenerates `STATIONS` between GENERATED markers; line layouts, branches, and termini are reviewed by hand in `line.rs`.
+A syntactically valid station code can still be unknown. Check `Station::find` or `Line::serves`. `scripts/sync-network.py --write` regenerates `STATIONS` between GENERATED markers; line layouts, branches, and termini are reviewed by hand in `line.rs`. Both tables are checked as they compile: an unsorted or repeated station, a malformed colour, a line station missing from `STATIONS`, a terminus off its line, or branches that disagree with their line's stations fail the build.
 
 <a id="reference"></a>
 
@@ -338,7 +338,7 @@ Use `dut-http` and the shared connection pool; never build a client per request.
 | --- | --- |
 | `fetch(UpstreamRequest).await -> Result<UpstreamResponse, UpstreamError>` | GET, read whole body, log start/finish/failure; non-2xx is an error |
 | `UpstreamRequest { upstream, url, timeout }` | Stable log name, URL, per-request timeout |
-| `json::<T>() -> Result<T, serde_json::Error>` | Decode with diagnostic excerpt on failure |
+| `json::<T>() -> Result<T, serde_json::Error>` | Decode with diagnostic excerpt on failure; `T: Deserialize<'a>` may borrow text from the body for as long as the response lives |
 | `ttl_hint() -> Option<Duration>` | Remaining upstream max-age minus Age |
 | `last_modified() -> Option<Timestamp>` | Parsed Last-Modified |
 | `body() -> &Bytes` | Original response bytes |
@@ -358,7 +358,7 @@ Use `dut-http` and the shared connection pool; never build a client per request.
 | `mtr::open_data::MtrOpenDataFeed::new(http, &base_url, timeout)?` | Feed<Item = ReferenceData>; seven sequential downloads; URL ends with / |
 | `connectivity::ConnectivityCheck::new(http, probes)` | One startup probe per upstream |
 | `connectivity::Probe::json(request)`, `Probe::csv(request)` | Validate the expected format, rejecting captive-portal HTML |
-| `CachePolicy` | default_ttl, ttl_floor, ttl_ceiling, stale_while_revalidate, stale_if_error, failure_backoff |
+| `CachePolicy` | `const` builder: `CachePolicy::fresh_for(default_ttl)`, then `.hints_between(floor, ceiling)`, `.stale_while_revalidate(d)`, `.stale_if_error(d)`, `.failure_backoff(d)`; a floor above the ceiling fails the build. Unset steps take hints as given and never serve stale or back off |
 
 Adapters expose `probe()` for bootstrap’s connectivity check. `RefreshingCache` remains private to `dut-upstream`.
 

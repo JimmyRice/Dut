@@ -167,14 +167,10 @@ mod tests {
 
     const INTERVAL: Duration = Duration::from_secs(30);
 
-    const SCHEDULE: Schedule = Schedule {
-        interval: INTERVAL,
-        first_poll_after: Duration::ZERO,
-        retry_after: INTERVAL,
-        fresh_for: Duration::from_secs(33),
-        stale_if_error: Duration::from_secs(900),
-        blind_after: Duration::from_secs(120),
-    };
+    const SCHEDULE: Schedule = Schedule::every(INTERVAL)
+        .fresh_for(Duration::from_secs(33))
+        .stale_if_error(Duration::from_secs(900))
+        .blind_after(Duration::from_secs(120));
 
     fn kwun_tong(condition: LineCondition) -> NetworkStatus {
         NetworkStatus {

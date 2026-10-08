@@ -129,14 +129,6 @@ mod tests {
     use super::*;
     use crate::fixtures;
 
-    fn code(code: &str) -> StationCode {
-        code.parse().expect("test station code should be valid")
-    }
-
-    fn codes(codes: &[&str]) -> Vec<StationCode> {
-        codes.iter().map(|value| code(value)).collect()
-    }
-
     fn published() -> (PublishedNetwork, StationIndex) {
         clean(&fixtures::read("mtr/open_data/mtr_lines_and_stations.csv"))
             .expect("the captured station list should clean")
@@ -184,14 +176,36 @@ mod tests {
             vec![
                 (
                     Direction::Up,
-                    codes(&["NOP", "QUB", "YAT", "TIK", "TKO", "HAH", "POA"])
+                    vec![
+                        station!("NOP"),
+                        station!("QUB"),
+                        station!("YAT"),
+                        station!("TIK"),
+                        station!("TKO"),
+                        station!("HAH"),
+                        station!("POA")
+                    ]
                 ),
-                (Direction::Up, codes(&["TIK", "TKO", "LHP"])),
+                (
+                    Direction::Up,
+                    vec![station!("TIK"), station!("TKO"), station!("LHP")]
+                ),
                 (
                     Direction::Down,
-                    codes(&["POA", "HAH", "TKO", "TIK", "YAT", "QUB", "NOP"])
+                    vec![
+                        station!("POA"),
+                        station!("HAH"),
+                        station!("TKO"),
+                        station!("TIK"),
+                        station!("YAT"),
+                        station!("QUB"),
+                        station!("NOP")
+                    ]
                 ),
-                (Direction::Down, codes(&["LHP", "TKO", "TIK"])),
+                (
+                    Direction::Down,
+                    vec![station!("LHP"), station!("TKO"), station!("TIK")]
+                ),
             ]
         );
     }
@@ -203,8 +217,8 @@ mod tests {
         assert_eq!(
             routes(&network, Line::DisneylandResort),
             vec![
-                (Direction::Up, codes(&["DIS", "SUN"])),
-                (Direction::Down, codes(&["SUN", "DIS"])),
+                (Direction::Up, vec![station!("DIS"), station!("SUN")]),
+                (Direction::Down, vec![station!("SUN"), station!("DIS")]),
             ]
         );
     }

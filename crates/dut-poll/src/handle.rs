@@ -169,14 +169,10 @@ mod tests {
         Duration::from_secs(seconds)
     }
 
-    const SCHEDULE: Schedule = Schedule {
-        interval: seconds(30),
-        first_poll_after: Duration::ZERO,
-        retry_after: seconds(30),
-        fresh_for: seconds(33),
-        stale_if_error: seconds(900),
-        blind_after: seconds(120),
-    };
+    const SCHEDULE: Schedule = Schedule::every(seconds(30))
+        .fresh_for(seconds(33))
+        .stale_if_error(seconds(900))
+        .blind_after(seconds(120));
 
     fn switchable(up: bool) -> (FeedHandle<u32>, Arc<AtomicBool>) {
         let up = Arc::new(AtomicBool::new(up));

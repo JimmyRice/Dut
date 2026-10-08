@@ -28,6 +28,13 @@ impl ThreeLetters {
         }
     }
 
+    /// The letters as one number that orders as they do, so static tables
+    /// can be compared in `const` items, where `Ord` is unavailable.
+    pub(crate) const fn rank(self) -> u32 {
+        let [first, second, third] = self.0;
+        u32::from_be_bytes([0, first, second, third])
+    }
+
     pub(crate) fn as_str(&self) -> &str {
         // `parse` only admits ASCII letters, so this never falls back.
         std::str::from_utf8(&self.0).unwrap_or_default()

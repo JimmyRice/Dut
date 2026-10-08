@@ -40,61 +40,43 @@ const POLL_STALE_IF_ERROR: Duration = Duration::from_secs(15 * 60);
 /// Line status changes rarely, and the MTR website itself refreshes it only
 /// every three minutes, so a poll every 30 seconds loses nothing. A value
 /// stays fresh until the next poll has had its timeout to finish.
-const LINE_STATUS_POLL: Schedule = Schedule {
-    interval: Duration::from_secs(30),
-    first_poll_after: Duration::ZERO,
-    retry_after: Duration::from_secs(30),
-    fresh_for: Duration::from_secs(30).saturating_add(MTR_REQUEST_TIMEOUT),
-    stale_if_error: POLL_STALE_IF_ERROR,
-    blind_after: Duration::from_secs(2 * 60),
-};
+const LINE_STATUS_POLL: Schedule = Schedule::every(Duration::from_secs(30))
+    .fresh_for(Duration::from_secs(30).saturating_add(MTR_REQUEST_TIMEOUT))
+    .stale_if_error(POLL_STALE_IF_ERROR)
+    .blind_after(Duration::from_secs(2 * 60));
 
 /// Warnings are issued minutes to hours ahead of their effect, so a poll
 /// every minute is plenty.
-const WEATHER_WARNINGS_POLL: Schedule = Schedule {
-    interval: Duration::from_secs(60),
-    first_poll_after: Duration::ZERO,
-    retry_after: Duration::from_secs(60),
-    fresh_for: Duration::from_secs(60).saturating_add(HKO_REQUEST_TIMEOUT),
-    stale_if_error: POLL_STALE_IF_ERROR,
-    blind_after: Duration::from_secs(5 * 60),
-};
+const WEATHER_WARNINGS_POLL: Schedule = Schedule::every(Duration::from_secs(60))
+    .fresh_for(Duration::from_secs(60).saturating_add(HKO_REQUEST_TIMEOUT))
+    .stale_if_error(POLL_STALE_IF_ERROR)
+    .blind_after(Duration::from_secs(5 * 60));
 
 /// Sampling only watches for changes, so it starts a minute after startup
 /// rather than competing with riders' first requests.
-const NEXT_TRAIN_SIGNALS_POLL: Schedule = Schedule {
-    interval: Duration::from_secs(60),
-    first_poll_after: Duration::from_secs(60),
-    retry_after: Duration::from_secs(60),
-    fresh_for: Duration::from_secs(60).saturating_add(MTR_REQUEST_TIMEOUT),
-    stale_if_error: POLL_STALE_IF_ERROR,
-    blind_after: Duration::from_secs(5 * 60),
-};
+const NEXT_TRAIN_SIGNALS_POLL: Schedule = Schedule::every(Duration::from_secs(60))
+    .first_poll_after(Duration::from_secs(60))
+    .fresh_for(Duration::from_secs(60).saturating_add(MTR_REQUEST_TIMEOUT))
+    .stale_if_error(POLL_STALE_IF_ERROR)
+    .blind_after(Duration::from_secs(5 * 60));
 
 /// Open data changes a few times a year, so it is read at startup and then
 /// once a day, and responses may be reused for up to a day. A failed read is
 /// retried within minutes, and the last good files are served, marked
 /// stale, for a month before the endpoints give up.
-const OPEN_DATA_POLL: Schedule = Schedule {
-    interval: Duration::from_secs(24 * 60 * 60),
-    first_poll_after: Duration::ZERO,
-    retry_after: Duration::from_secs(5 * 60),
-    fresh_for: Duration::from_secs(24 * 60 * 60).saturating_add(OPEN_DATA_REQUEST_TIMEOUT),
-    stale_if_error: Duration::from_secs(30 * 24 * 60 * 60),
-    blind_after: Duration::from_secs(48 * 60 * 60),
-};
+const OPEN_DATA_POLL: Schedule = Schedule::every(Duration::from_secs(24 * 60 * 60))
+    .retry_after(Duration::from_secs(5 * 60))
+    .fresh_for(Duration::from_secs(24 * 60 * 60).saturating_add(OPEN_DATA_REQUEST_TIMEOUT))
+    .stale_if_error(Duration::from_secs(30 * 24 * 60 * 60))
+    .blind_after(Duration::from_secs(48 * 60 * 60));
 
 /// Next Train data is served fresh or not at all under normal conditions:
 /// expired boards are refreshed before answering (no stale-while-revalidate),
 /// and freshness follows the upstream CDN's remaining `max-age`.
-const NEXT_TRAIN_CACHE: CachePolicy = CachePolicy {
-    default_ttl: Duration::from_secs(10),
-    ttl_floor: Duration::from_secs(2),
-    ttl_ceiling: Duration::from_secs(15),
-    stale_while_revalidate: Duration::ZERO,
-    stale_if_error: Duration::from_secs(90),
-    failure_backoff: Duration::from_secs(5),
-};
+const NEXT_TRAIN_CACHE: CachePolicy = CachePolicy::fresh_for(Duration::from_secs(10))
+    .hints_between(Duration::from_secs(2), Duration::from_secs(15))
+    .stale_if_error(Duration::from_secs(90))
+    .failure_backoff(Duration::from_secs(5));
 
 /// Settings for one server process. The default listens on localhost,
 /// reads the live upstreams, and serves no mock API; the command line can

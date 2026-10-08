@@ -30,8 +30,11 @@ pub(super) fn decode_rows<T: DeserializeOwned>(
         .map_err(|cause| csv_error(file, cause))?;
 
     let mut rows = Vec::new();
-    for record in reader.records() {
-        let record = record.map_err(|cause| csv_error(file, cause))?;
+    let mut record = StringRecord::new();
+    while reader
+        .read_record(&mut record)
+        .map_err(|cause| csv_error(file, cause))?
+    {
         if is_blank(&record) {
             continue;
         }

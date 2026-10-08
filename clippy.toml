@@ -1,0 +1,6 @@
+# Tests may unwrap, panic, and index: a failure there is the point. The
+# lints these settings relax are enabled in the workspace manifest.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true

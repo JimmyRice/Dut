@@ -1,12 +1,16 @@
-use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 
-#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
+use serde::Serialize;
+
+#[derive(Debug, Serialize)]
 pub(crate) struct ErrorResponse {
     pub error: ErrorDetail,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+/// Fixed text for every error but one, so building and cloning a detail
+/// allocates nothing unless it names the path that was not found.
+#[derive(Clone, Debug, Serialize)]
 pub(crate) struct ErrorDetail {
-    pub code: String,
-    pub message: String,
+    pub code: &'static str,
+    pub message: Cow<'static, str>,
 }
