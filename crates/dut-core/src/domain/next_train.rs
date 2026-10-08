@@ -1,6 +1,6 @@
 //! Upcoming train arrivals for one station on one line.
 
-use std::{fmt, str::FromStr};
+use std::{fmt, slice, str::FromStr};
 
 use jiff::{SignedDuration, Timestamp};
 use thiserror::Error;
@@ -69,42 +69,40 @@ impl TrainArrival {
 /// assert!("1/2/3".parse::<Platforms>().is_err());
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
-#[derive(Clone, Copy)]
-pub struct Platforms {
-    numbers: [u8; 2],
-    len: u8,
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct Platforms(Standing);
+
+/// How many platforms a train stands at, so that no other count can be
+/// represented.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Standing {
+    Unknown,
+    One(u8),
+    Pair([u8; 2]),
 }
 
 impl Platforms {
     /// No known platform.
-    pub const NONE: Self = Self {
-        numbers: [0; 2],
-        len: 0,
-    };
+    pub const NONE: Self = Self(Standing::Unknown);
 
     /// A train at one platform, as nearly everywhere.
     pub const fn one(number: u8) -> Self {
-        Self {
-            numbers: [number, 0],
-            len: 1,
-        }
+        Self(Standing::One(number))
     }
 
     /// A train between two platforms with its doors open on both sides, as
     /// at Airport.
     pub const fn pair(first: u8, second: u8) -> Self {
-        Self {
-            numbers: [first, second],
-            len: 2,
-        }
+        Self(Standing::Pair([first, second]))
     }
 
     /// The platform numbers, empty when none is known.
-    pub fn as_slice(&self) -> &[u8] {
-        // `len` never exceeds the array, so this never falls back.
-        self.numbers
-            .get(..usize::from(self.len))
-            .unwrap_or_default()
+    pub const fn as_slice(&self) -> &[u8] {
+        match &self.0 {
+            Standing::Unknown => &[],
+            Standing::One(number) => slice::from_ref(number),
+            Standing::Pair(numbers) => numbers,
+        }
     }
 }
 
@@ -121,14 +119,6 @@ impl FromStr for Platforms {
         }
     }
 }
-
-impl PartialEq for Platforms {
-    fn eq(&self, other: &Self) -> bool {
-        self.as_slice() == other.as_slice()
-    }
-}
-
-impl Eq for Platforms {}
 
 impl fmt::Debug for Platforms {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
