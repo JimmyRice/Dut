@@ -333,7 +333,8 @@ impl<V: Send + Sync + 'static> Slot<V> {
         Fut: Future<Output = Result<Fetched<V>, E>> + Send + 'static,
         E: Error + Send + Sync + 'static,
     {
-        if let Some(retry_in) = self.backoff_remaining(now, &policy) {
+        let backoff = self.state().backoff_remaining(now, &policy);
+        if let Some(retry_in) = backoff {
             debug!(
                 stale_age_ms = millis(overdue),
                 retry_in_ms = millis(retry_in),
@@ -380,35 +381,39 @@ impl<V: Send + Sync + 'static> Slot<V> {
         let _refreshing = self.refresh_lock.lock().await;
         let now = Instant::now();
 
-        if let Some(snapshot) = self.fresh_snapshot(now) {
-            debug!(
-                waited_ms = millis(now - waiting_since),
-                "reused the result of a concurrent refresh"
-            );
-            return Ok(snapshot);
-        }
-
-        if let Some(retry_in) = self.backoff_remaining(now, policy) {
-            return match self.stale_fallback(now, policy) {
-                Some((snapshot, overdue)) => {
-                    warn!(
-                        retry_in_ms = millis(retry_in),
-                        stale_age_ms = millis(overdue),
-                        "upstream is in failure backoff; serving stale value"
-                    );
-                    Ok(snapshot)
-                }
-                None => {
-                    warn!(
-                        retry_in_ms = millis(retry_in),
-                        "upstream is in failure backoff and no usable stale value exists"
-                    );
-                    Err(CacheError::BackingOff { retry_in })
-                }
-            };
-        }
-
-        let age_ms = self.stored_age(now).map(millis);
+        // Bound first, so the lock is released before anything is logged.
+        let before = self.state().before_refresh(now, policy);
+        let age_ms = match before {
+            BeforeRefresh::Fresh(snapshot) => {
+                debug!(
+                    waited_ms = millis(now - waiting_since),
+                    "reused the result of a concurrent refresh"
+                );
+                return Ok(snapshot);
+            }
+            BeforeRefresh::BackingOff {
+                retry_in,
+                stale: Some((snapshot, overdue)),
+            } => {
+                warn!(
+                    retry_in_ms = millis(retry_in),
+                    stale_age_ms = millis(overdue),
+                    "upstream is in failure backoff; serving stale value"
+                );
+                return Ok(snapshot);
+            }
+            BeforeRefresh::BackingOff {
+                retry_in,
+                stale: None,
+            } => {
+                warn!(
+                    retry_in_ms = millis(retry_in),
+                    "upstream is in failure backoff and no usable stale value exists"
+                );
+                return Err(CacheError::BackingOff { retry_in });
+            }
+            BeforeRefresh::Fetch { age } => age.map(millis),
+        };
         let reason = if age_ms.is_some() {
             "expired"
         } else {
@@ -435,8 +440,12 @@ impl<V: Send + Sync + 'static> Slot<V> {
                 Ok(snapshot)
             }
             Err(fetch_error) => {
-                self.state().failed_at = Some(now);
-                match self.stale_fallback(now, policy) {
+                let fallback = {
+                    let mut state = self.state();
+                    state.failed_at = Some(now);
+                    state.stale_fallback(now, policy)
+                };
+                match fallback {
                     Some((snapshot, overdue)) => {
                         warn!(
                             stale_age_ms = millis(overdue),
@@ -474,12 +483,32 @@ impl<V: Send + Sync + 'static> Slot<V> {
         snapshot
     }
 
-    fn fresh_snapshot(&self, now: Instant) -> Option<Snapshot<V>> {
-        self.state()
-            .entry
-            .as_ref()
-            .filter(|entry| now < entry.fresh_until)
-            .map(|entry| entry.fresh_snapshot(now))
+    fn state(&self) -> MutexGuard<'_, SlotState<V>> {
+        // No code panics while holding this lock, so poisoning cannot leave
+        // the state half-updated; recover rather than propagate.
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+impl<V> SlotState<V> {
+    /// What a refresh should do, read in one critical section so that its
+    /// checks agree with one another.
+    fn before_refresh(&self, now: Instant, policy: &CachePolicy) -> BeforeRefresh<V> {
+        if let Some(entry) = self.entry.as_ref().filter(|entry| now < entry.fresh_until) {
+            return BeforeRefresh::Fresh(entry.fresh_snapshot(now));
+        }
+        if let Some(retry_in) = self.backoff_remaining(now, policy) {
+            return BeforeRefresh::BackingOff {
+                retry_in,
+                stale: self.stale_fallback(now, policy),
+            };
+        }
+        BeforeRefresh::Fetch {
+            age: self
+                .entry
+                .as_ref()
+                .map(|entry| now.saturating_duration_since(entry.stored_at)),
+        }
     }
 
     /// A stale value that is still recent enough to stand in for fresh data.
@@ -488,30 +517,30 @@ impl<V: Send + Sync + 'static> Slot<V> {
         now: Instant,
         policy: &CachePolicy,
     ) -> Option<(Snapshot<V>, Duration)> {
-        let state = self.state();
-        let entry = state.entry.as_ref()?;
+        let entry = self.entry.as_ref()?;
         let overdue = now.saturating_duration_since(entry.fresh_until);
         (overdue <= policy.stale_if_error).then(|| (entry.stale_snapshot(), overdue))
     }
 
     fn backoff_remaining(&self, now: Instant, policy: &CachePolicy) -> Option<Duration> {
-        let failed_at = self.state().failed_at?;
+        let failed_at = self.failed_at?;
         let retry_in = (failed_at + policy.failure_backoff).saturating_duration_since(now);
         (!retry_in.is_zero()).then_some(retry_in)
     }
+}
 
-    fn stored_age(&self, now: Instant) -> Option<Duration> {
-        self.state()
-            .entry
-            .as_ref()
-            .map(|entry| now.saturating_duration_since(entry.stored_at))
-    }
-
-    fn state(&self) -> MutexGuard<'_, SlotState<V>> {
-        // No code panics while holding this lock, so poisoning cannot leave
-        // the state half-updated; recover rather than propagate.
-        self.state.lock().unwrap_or_else(PoisonError::into_inner)
-    }
+/// What a refresh finds once it holds the refresh lock.
+enum BeforeRefresh<V> {
+    /// A concurrent refresh stored a fresh value while this one waited.
+    Fresh(Snapshot<V>),
+    /// Upstream failed too recently to ask again; `stale` may stand in.
+    BackingOff {
+        retry_in: Duration,
+        stale: Option<(Snapshot<V>, Duration)>,
+    },
+    /// Fetch from upstream; `age` is how long ago the current value was
+    /// stored, if there is one.
+    Fetch { age: Option<Duration> },
 }
 
 impl<V> Entry<V> {
