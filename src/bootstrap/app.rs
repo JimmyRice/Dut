@@ -116,3 +116,25 @@ pub(super) fn assemble(config: &AppConfig) -> Result<App, StartupError> {
 fn parse_endpoint(name: &'static str, value: &str) -> Result<Url, StartupError> {
     Url::parse(value).map_err(|source| StartupError::InvalidEndpoint { name, source })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The defaults are only parsed when the real service starts, which no
+    /// other test does, since that would poll the live upstreams.
+    #[test]
+    fn the_default_endpoints_are_valid_urls() {
+        let config = AppConfig::default();
+        let (mtr, hko) = (config.mtr(), config.hko());
+
+        for (name, endpoint) in [
+            ("next_train_endpoint", &mtr.next_train_endpoint),
+            ("line_status_endpoint", &mtr.line_status_endpoint),
+            ("open_data_endpoint", &mtr.open_data_endpoint),
+            ("weather_warnings_endpoint", &hko.warnings_endpoint),
+        ] {
+            assert!(parse_endpoint(name, endpoint).is_ok(), "{name}: {endpoint}");
+        }
+    }
+}
