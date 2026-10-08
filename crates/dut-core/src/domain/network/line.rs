@@ -501,10 +501,6 @@ mod tests {
     use super::*;
     use crate::station;
 
-    fn code(code: &str) -> StationCode {
-        code.parse().expect("test station code should be valid")
-    }
-
     #[test]
     fn parses_line_codes_case_insensitively() {
         assert_eq!("tkl".parse(), Ok(Line::TseungKwanO));
@@ -519,12 +515,8 @@ mod tests {
         }
     }
 
-    fn codes(codes: &[&str]) -> Vec<StationCode> {
-        codes.iter().map(|station| code(station)).collect()
-    }
-
-    fn towards(line: Line, station: &str, direction: Direction) -> Vec<StationCode> {
-        line.towards(code(station), direction).copied().collect()
+    fn towards(line: Line, station: StationCode, direction: Direction) -> Vec<StationCode> {
+        line.towards(station, direction).copied().collect()
     }
 
     /// A direction may only run out at one of its own termini. This catches a
@@ -549,32 +541,53 @@ mod tests {
     fn a_fork_lists_only_the_termini_its_branch_reaches() {
         let line = Line::TseungKwanO;
 
-        assert_eq!(towards(line, "TKO", Direction::Up), codes(&["POA", "LHP"]));
-        assert_eq!(towards(line, "HAH", Direction::Up), codes(&["POA"]));
-        assert_eq!(towards(line, "LHP", Direction::Up), codes(&[]));
-        assert_eq!(towards(line, "LHP", Direction::Down), codes(&["NOP"]));
+        assert_eq!(
+            towards(line, station!("TKO"), Direction::Up),
+            vec![station!("POA"), station!("LHP")]
+        );
+        assert_eq!(
+            towards(line, station!("HAH"), Direction::Up),
+            vec![station!("POA")]
+        );
+        assert_eq!(
+            towards(line, station!("LHP"), Direction::Up),
+            Vec::<StationCode>::new()
+        );
+        assert_eq!(
+            towards(line, station!("LHP"), Direction::Down),
+            vec![station!("NOP")]
+        );
     }
 
     #[test]
     fn a_terminus_has_nowhere_further_to_go() {
-        assert_eq!(towards(Line::TseungKwanO, "POA", Direction::Up), codes(&[]));
-        assert_eq!(towards(Line::EastRail, "LOW", Direction::Up), codes(&[]));
         assert_eq!(
-            towards(Line::EastRail, "SHS", Direction::Up),
-            codes(&["LOW", "LMC"])
+            towards(Line::TseungKwanO, station!("POA"), Direction::Up),
+            Vec::<StationCode>::new()
         );
-        assert_eq!(towards(Line::EastRail, "ADM", Direction::Down), codes(&[]));
+        assert_eq!(
+            towards(Line::EastRail, station!("LOW"), Direction::Up),
+            Vec::<StationCode>::new()
+        );
+        assert_eq!(
+            towards(Line::EastRail, station!("SHS"), Direction::Up),
+            vec![station!("LOW"), station!("LMC")]
+        );
+        assert_eq!(
+            towards(Line::EastRail, station!("ADM"), Direction::Down),
+            Vec::<StationCode>::new()
+        );
     }
 
     #[test]
     fn a_short_working_terminus_is_not_a_platform_sign() {
         assert_eq!(
-            towards(Line::TseungKwanO, "YAT", Direction::Down),
-            codes(&["NOP"])
+            towards(Line::TseungKwanO, station!("YAT"), Direction::Down),
+            vec![station!("NOP")]
         );
         assert_eq!(
-            towards(Line::EastRail, "TAW", Direction::Down),
-            codes(&["ADM"])
+            towards(Line::EastRail, station!("TAW"), Direction::Down),
+            vec![station!("ADM")]
         );
     }
 
@@ -582,9 +595,18 @@ mod tests {
     fn disneyland_resort_up_trains_run_towards_the_first_station() {
         let line = Line::DisneylandResort;
 
-        assert_eq!(towards(line, "DIS", Direction::Up), codes(&["SUN"]));
-        assert_eq!(towards(line, "SUN", Direction::Up), codes(&[]));
-        assert_eq!(towards(line, "SUN", Direction::Down), codes(&["DIS"]));
+        assert_eq!(
+            towards(line, station!("DIS"), Direction::Up),
+            vec![station!("SUN")]
+        );
+        assert_eq!(
+            towards(line, station!("SUN"), Direction::Up),
+            Vec::<StationCode>::new()
+        );
+        assert_eq!(
+            towards(line, station!("SUN"), Direction::Down),
+            vec![station!("DIS")]
+        );
     }
 
     #[test]

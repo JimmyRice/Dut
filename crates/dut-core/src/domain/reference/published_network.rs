@@ -137,10 +137,6 @@ mod tests {
     use super::*;
     use crate::station;
 
-    fn code(code: &str) -> StationCode {
-        code.parse().expect("test station code should be valid")
-    }
-
     /// The compiled network, published exactly as this service knows it.
     fn compiled() -> PublishedNetwork {
         PublishedNetwork {
@@ -161,12 +157,12 @@ mod tests {
         }
     }
 
-    fn without(network: &mut PublishedNetwork, station: &str) {
+    fn without(network: &mut PublishedNetwork, station: StationCode) {
         network
             .stations
-            .retain(|published| published.code != code(station));
+            .retain(|published| published.code != station);
         for route in &mut network.routes {
-            route.stations.retain(|stop| *stop != code(station));
+            route.stations.retain(|stop| *stop != station);
         }
     }
 
@@ -178,7 +174,7 @@ mod tests {
     #[test]
     fn a_station_left_out_everywhere_is_only_unpublished() {
         let mut network = compiled();
-        without(&mut network, "RAC");
+        without(&mut network, station!("RAC"));
 
         assert_eq!(
             network.drift(),

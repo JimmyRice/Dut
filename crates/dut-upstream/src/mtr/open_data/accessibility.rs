@@ -186,17 +186,13 @@ fn provided(value: &str) -> Result<bool, OpenDataError> {
 
 #[cfg(test)]
 mod tests {
-    use dut_core::domain::localized::Localized;
+    use dut_core::{domain::localized::Localized, station};
 
     use super::*;
     use crate::{
         fixtures,
         mtr::open_data::{fares, stations},
     };
-
-    fn code(code: &str) -> StationCode {
-        code.parse().expect("test station code should be valid")
-    }
 
     /// The station index as a real poll builds it, with Racecourse learned
     /// from the fare file.
@@ -221,11 +217,14 @@ mod tests {
         .expect("the captured facilities should clean")
     }
 
-    fn station(accessibility: &Accessibility, station: &str) -> Vec<(String, Option<String>)> {
+    fn station(
+        accessibility: &Accessibility,
+        station: StationCode,
+    ) -> Vec<(String, Option<String>)> {
         accessibility
             .stations
             .iter()
-            .find(|entry| entry.station == code(station))
+            .find(|entry| entry.station == station)
             .map(|entry| {
                 entry
                     .facilities
@@ -300,7 +299,7 @@ mod tests {
     #[test]
     fn lists_only_what_a_station_provides_with_its_location() {
         let accessibility = accessibility();
-        let admiralty = station(&accessibility, "ADM");
+        let admiralty = station(&accessibility, station!("ADM"));
 
         assert!(!admiralty.is_empty());
         assert!(
@@ -313,7 +312,7 @@ mod tests {
 
     #[test]
     fn resolves_racecourse_through_the_fare_file() {
-        assert!(!station(&accessibility(), "RAC").is_empty());
+        assert!(!station(&accessibility(), station!("RAC")).is_empty());
     }
 
     #[test]

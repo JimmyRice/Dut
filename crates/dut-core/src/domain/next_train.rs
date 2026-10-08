@@ -256,6 +256,7 @@ impl NextTrainSignals {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::station;
 
     fn timestamp(seconds: i64) -> Timestamp {
         Timestamp::from_second(seconds).expect("test timestamp should be in range")
@@ -264,7 +265,7 @@ mod tests {
     fn train(sequence: u8, arrival_at: Timestamp) -> TrainArrival {
         TrainArrival {
             sequence,
-            destination: "POA".parse().expect("test station code should be valid"),
+            destination: station!("POA"),
             platforms: Platforms::one(1),
             arrival_at,
             time_type: None,
@@ -307,10 +308,10 @@ mod tests {
         assert_eq!(format!("{:?}", Platforms::pair(1, 3)), "Platforms([1, 3])");
     }
 
-    fn board(station: &str, trains: ByDirection<Vec<TrainArrival>>) -> NextTrainBoard {
+    fn board(station: StationCode, trains: ByDirection<Vec<TrainArrival>>) -> NextTrainBoard {
         NextTrainBoard {
             line: Line::TseungKwanO,
-            station: station.parse().expect("test station code should be valid"),
+            station,
             generated_at: timestamp(0),
             delayed: false,
             alert: None,
@@ -321,7 +322,7 @@ mod tests {
     #[test]
     fn upcoming_skips_departed_trains_in_the_requested_direction() {
         let board = board(
-            "TKO",
+            station!("TKO"),
             ByDirection::new(
                 vec![train(1, timestamp(100)), train(2, timestamp(400))],
                 vec![train(1, timestamp(500))],
@@ -338,7 +339,7 @@ mod tests {
 
     #[test]
     fn a_mid_line_station_shows_both_directions_even_without_trains() {
-        let board = board("TKO", ByDirection::default());
+        let board = board(station!("TKO"), ByDirection::default());
 
         let directions: Vec<Direction> = board.directions(timestamp(0)).collect();
 
@@ -347,7 +348,7 @@ mod tests {
 
     #[test]
     fn a_terminus_leaves_out_the_direction_that_ends_there() {
-        let board = board("POA", ByDirection::default());
+        let board = board(station!("POA"), ByDirection::default());
 
         let directions: Vec<Direction> = board.directions(timestamp(0)).collect();
 
@@ -357,7 +358,10 @@ mod tests {
     #[test]
     fn a_direction_with_upcoming_trains_is_never_left_out() {
         let arriving = train(1, timestamp(100));
-        let board = board("POA", ByDirection::new(vec![arriving], Vec::new()));
+        let board = board(
+            station!("POA"),
+            ByDirection::new(vec![arriving], Vec::new()),
+        );
 
         let before: Vec<Direction> = board.directions(timestamp(0)).collect();
         let after: Vec<Direction> = board.directions(timestamp(200)).collect();
@@ -379,7 +383,7 @@ mod tests {
         let board = NextTrainBoard {
             delayed: true,
             alert: Some(notice("Special train service arrangement")),
-            ..board("TKO", ByDirection::default())
+            ..board(station!("TKO"), ByDirection::default())
         };
 
         assert_eq!(
@@ -391,10 +395,10 @@ mod tests {
         );
     }
 
-    fn sampled(station: &str, signal: NextTrainSignal) -> BoardSignal {
+    fn sampled(station: StationCode, signal: NextTrainSignal) -> BoardSignal {
         BoardSignal {
             line: Line::TseungKwanO,
-            station: station.parse().expect("test station code should be valid"),
+            station,
             signal,
         }
     }
@@ -410,14 +414,14 @@ mod tests {
     fn signal_changes_cover_only_boards_whose_signal_changed() {
         let before = NextTrainSignals {
             boards: vec![
-                sampled("TKO", NextTrainSignal::default()),
-                sampled("POA", NextTrainSignal::default()),
+                sampled(station!("TKO"), NextTrainSignal::default()),
+                sampled(station!("POA"), NextTrainSignal::default()),
             ],
         };
         let after = NextTrainSignals {
             boards: vec![
-                sampled("TKO", delayed()),
-                sampled("POA", NextTrainSignal::default()),
+                sampled(station!("TKO"), delayed()),
+                sampled(station!("POA"), NextTrainSignal::default()),
             ],
         };
 
@@ -427,7 +431,7 @@ mod tests {
             changes,
             [SignalChange {
                 line: Line::TseungKwanO,
-                station: "TKO".parse().expect("test station code should be valid"),
+                station: station!("TKO"),
                 previous: NextTrainSignal::default(),
                 current: delayed(),
             }]
@@ -437,7 +441,7 @@ mod tests {
     #[test]
     fn a_board_that_failed_to_load_is_not_a_signal_change() {
         let before = NextTrainSignals {
-            boards: vec![sampled("TKO", delayed())],
+            boards: vec![sampled(station!("TKO"), delayed())],
         };
         let after = NextTrainSignals::default();
 

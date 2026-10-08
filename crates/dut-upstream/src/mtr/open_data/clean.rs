@@ -95,7 +95,7 @@ fn report_drift(network: &PublishedNetwork) {
 mod tests {
     use std::sync::Arc;
 
-    use dut_core::domain::{network::StationCode, reference::SourceFile};
+    use dut_core::{domain::reference::SourceFile, station};
     use jiff::Timestamp;
 
     use super::*;
@@ -120,7 +120,7 @@ mod tests {
         assert!(!data.airport_express_fares.value().trips().is_empty());
         assert_eq!(data.light_rail.value().stops.len(), 68);
         assert!(!data.light_rail_fares.value().trips().is_empty());
-        let racecourse: StationCode = "RAC".parse().expect("valid code");
+        let racecourse = station!("RAC");
         assert!(
             data.accessibility
                 .value()
