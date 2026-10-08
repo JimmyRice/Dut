@@ -35,31 +35,97 @@ use dut_core::application::source::{Freshness, Snapshot};
 use dut_telemetry::millis;
 
 /// How the adapters' caches treat age and upstream failures.
+///
+/// Built in `const` items, starting from [`fresh_for`](Self::fresh_for), so
+/// inconsistent bounds fail the build:
+///
+/// ```
+/// use std::time::Duration;
+///
+/// use dut_upstream::CachePolicy;
+///
+/// const BOARDS: CachePolicy = CachePolicy::fresh_for(Duration::from_secs(10))
+///     .hints_between(Duration::from_secs(2), Duration::from_secs(15))
+///     .stale_if_error(Duration::from_secs(90))
+///     .failure_backoff(Duration::from_secs(5));
+/// ```
+///
+/// ```compile_fail
+/// use std::time::Duration;
+///
+/// use dut_upstream::CachePolicy;
+///
+/// const BOARDS: CachePolicy = CachePolicy::fresh_for(Duration::from_secs(10))
+///     .hints_between(Duration::from_secs(15), Duration::from_secs(2));
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CachePolicy {
-    /// Freshness period used when upstream gives no hint.
-    pub default_ttl: Duration,
-    /// Lower bound for upstream hints, so a nearly expired upstream response
-    /// cannot cause a tight refetch loop. Must not exceed `ttl_ceiling`.
-    pub ttl_floor: Duration,
-    /// Upper bound for upstream hints.
-    pub ttl_ceiling: Duration,
-    /// How long after expiry a value may still be served immediately while a
-    /// background refresh runs. Zero makes readers wait for the refresh.
-    pub stale_while_revalidate: Duration,
-    /// How long after expiry a value may stand in when a refresh fails.
-    pub stale_if_error: Duration,
-    /// How long to leave upstream alone after a failed refresh.
-    pub failure_backoff: Duration,
+    default_ttl: Duration,
+    ttl_floor: Duration,
+    ttl_ceiling: Duration,
+    stale_while_revalidate: Duration,
+    stale_if_error: Duration,
+    failure_backoff: Duration,
 }
 
 impl CachePolicy {
+    /// Keeps a value fresh for `default_ttl` when upstream gives no hint.
+    ///
+    /// Until the other steps say otherwise, upstream hints are taken as
+    /// given, readers wait for every refresh, an expired value never stands
+    /// in for a failed refresh, and a failure is retried by the next reader.
+    pub const fn fresh_for(default_ttl: Duration) -> Self {
+        Self {
+            default_ttl,
+            ttl_floor: Duration::ZERO,
+            ttl_ceiling: Duration::MAX,
+            stale_while_revalidate: Duration::ZERO,
+            stale_if_error: Duration::ZERO,
+            failure_backoff: Duration::ZERO,
+        }
+    }
+
+    /// Bounds upstream's freshness hints, and the default too. The floor
+    /// stops a nearly expired upstream response from causing a tight
+    /// refetch loop.
+    #[must_use]
+    pub const fn hints_between(mut self, floor: Duration, ceiling: Duration) -> Self {
+        assert!(
+            floor.as_nanos() <= ceiling.as_nanos(),
+            "a TTL floor must not exceed its ceiling"
+        );
+        self.ttl_floor = floor;
+        self.ttl_ceiling = ceiling;
+        self
+    }
+
+    /// How long after expiry a value may still be served immediately while a
+    /// background refresh runs. Zero makes readers wait for the refresh.
+    #[must_use]
+    pub const fn stale_while_revalidate(mut self, period: Duration) -> Self {
+        self.stale_while_revalidate = period;
+        self
+    }
+
+    /// How long after expiry a value may stand in when a refresh fails.
+    #[must_use]
+    pub const fn stale_if_error(mut self, period: Duration) -> Self {
+        self.stale_if_error = period;
+        self
+    }
+
+    /// How long to leave upstream alone after a failed refresh.
+    #[must_use]
+    pub const fn failure_backoff(mut self, period: Duration) -> Self {
+        self.failure_backoff = period;
+        self
+    }
+
     /// The freshness period for a new value, given upstream's hint.
     fn ttl(&self, hint: Option<Duration>) -> (Duration, TtlSource) {
         match hint {
             None => (
-                self.default_ttl
-                    .clamp(self.ttl_floor, self.ttl_ceiling.max(self.ttl_floor)),
+                self.default_ttl.max(self.ttl_floor).min(self.ttl_ceiling),
                 TtlSource::Default,
             ),
             Some(hint) if hint < self.ttl_floor => (self.ttl_floor, TtlSource::Floor),
@@ -492,14 +558,10 @@ mod tests {
     const TTL: Duration = Duration::from_secs(10);
 
     fn policy() -> CachePolicy {
-        CachePolicy {
-            default_ttl: TTL,
-            ttl_floor: Duration::from_secs(1),
-            ttl_ceiling: Duration::from_secs(30),
-            stale_while_revalidate: Duration::ZERO,
-            stale_if_error: Duration::from_secs(60),
-            failure_backoff: Duration::from_secs(5),
-        }
+        CachePolicy::fresh_for(TTL)
+            .hints_between(Duration::from_secs(1), Duration::from_secs(30))
+            .stale_if_error(Duration::from_secs(60))
+            .failure_backoff(Duration::from_secs(5))
     }
 
     fn cache(policy: CachePolicy) -> RefreshingCache<&'static str, u32> {
@@ -692,10 +754,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn revalidates_in_the_background_within_the_stale_window() {
-        let cache = cache(CachePolicy {
-            stale_while_revalidate: Duration::from_secs(30),
-            ..policy()
-        });
+        let cache = cache(policy().stale_while_revalidate(Duration::from_secs(30)));
         let counter = Arc::new(AtomicUsize::new(0));
 
         cache

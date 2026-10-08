@@ -3,29 +3,111 @@ use std::time::Duration;
 use dut_core::application::source::Freshness;
 
 /// When a feed is read, and how long what was read stays usable.
+///
+/// Built in `const` items, starting from [`every`](Self::every): each step
+/// checks its own value, so a schedule the poller cannot run, such as one
+/// with a zero interval, fails the build.
+///
+/// ```
+/// use std::time::Duration;
+///
+/// use dut_poll::Schedule;
+///
+/// const WARNINGS: Schedule = Schedule::every(Duration::from_secs(60))
+///     // The interval plus the request timeout.
+///     .fresh_for(Duration::from_secs(65))
+///     .stale_if_error(Duration::from_secs(15 * 60))
+///     .blind_after(Duration::from_secs(5 * 60));
+/// ```
+///
+/// A value that would go stale before the next poll does not compile:
+///
+/// ```compile_fail
+/// use std::time::Duration;
+///
+/// use dut_poll::Schedule;
+///
+/// const WARNINGS: Schedule =
+///     Schedule::every(Duration::from_secs(60)).fresh_for(Duration::from_secs(30));
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Schedule {
-    /// Time between the starts of consecutive polls.
-    pub interval: Duration,
-    /// Delay before the first poll; zero polls as soon as polling starts.
-    pub first_poll_after: Duration,
-    /// Delay before the next poll after a failed one. A feed read once a day
-    /// retries within minutes, so one failure does not leave it without data
-    /// until the next day; a value at or above `interval` keeps the regular
-    /// schedule.
-    pub retry_after: Duration,
-    /// How long a value counts as fresh after it was read. The interval plus
-    /// the request timeout keeps a value fresh while the next poll is still
-    /// in flight.
-    pub fresh_for: Duration,
-    /// How long after it stops being fresh a value may still be served,
-    /// marked stale, while polls keep failing.
-    pub stale_if_error: Duration,
-    /// How long without a successful poll before the source counts as blind.
-    pub blind_after: Duration,
+    pub(crate) interval: Duration,
+    pub(crate) first_poll_after: Duration,
+    pub(crate) retry_after: Duration,
+    fresh_for: Duration,
+    stale_if_error: Duration,
+    pub(crate) blind_after: Duration,
 }
 
 impl Schedule {
+    /// Polls every `interval`, measured between the starts of consecutive
+    /// polls, beginning as soon as polling starts.
+    ///
+    /// Until the other steps say otherwise, a failed poll waits the full
+    /// interval, a value is fresh for one interval and never served stale,
+    /// and the source never counts as blind.
+    pub const fn every(interval: Duration) -> Self {
+        assert!(!interval.is_zero(), "a poll interval must be positive");
+        Self {
+            interval,
+            first_poll_after: Duration::ZERO,
+            retry_after: interval,
+            fresh_for: interval,
+            stale_if_error: Duration::ZERO,
+            blind_after: Duration::MAX,
+        }
+    }
+
+    /// Delays the first poll; zero polls as soon as polling starts.
+    #[must_use]
+    pub const fn first_poll_after(mut self, delay: Duration) -> Self {
+        self.first_poll_after = delay;
+        self
+    }
+
+    /// Delay before the next poll after a failed one. A feed read once a day
+    /// retries within minutes, so one failure does not leave it without data
+    /// until the next day; a value at or above the interval keeps the
+    /// regular schedule.
+    #[must_use]
+    pub const fn retry_after(mut self, delay: Duration) -> Self {
+        assert!(
+            !delay.is_zero(),
+            "a retry delay must be positive, or failures would retry in a tight loop"
+        );
+        self.retry_after = delay;
+        self
+    }
+
+    /// How long a value counts as fresh after it was read. The interval plus
+    /// the request timeout keeps a value fresh while the next poll is still
+    /// in flight; less would turn every value stale before its successor.
+    #[must_use]
+    pub const fn fresh_for(mut self, period: Duration) -> Self {
+        assert!(
+            period.as_nanos() >= self.interval.as_nanos(),
+            "a value must stay fresh for at least one poll interval"
+        );
+        self.fresh_for = period;
+        self
+    }
+
+    /// How long after it stops being fresh a value may still be served,
+    /// marked stale, while polls keep failing.
+    #[must_use]
+    pub const fn stale_if_error(mut self, period: Duration) -> Self {
+        self.stale_if_error = period;
+        self
+    }
+
+    /// How long without a successful poll before the source counts as blind.
+    #[must_use]
+    pub const fn blind_after(mut self, period: Duration) -> Self {
+        self.blind_after = period;
+        self
+    }
+
     /// The freshness of a value read `age` ago, or `None` once it is too old
     /// to serve at all.
     pub(crate) fn freshness(&self, age: Duration) -> Option<Freshness> {
@@ -56,14 +138,10 @@ mod tests {
         Duration::from_secs(seconds)
     }
 
-    const SCHEDULE: Schedule = Schedule {
-        interval: seconds(30),
-        first_poll_after: Duration::ZERO,
-        retry_after: seconds(30),
-        fresh_for: seconds(33),
-        stale_if_error: seconds(900),
-        blind_after: seconds(120),
-    };
+    const SCHEDULE: Schedule = Schedule::every(seconds(30))
+        .fresh_for(seconds(33))
+        .stale_if_error(seconds(900))
+        .blind_after(seconds(120));
 
     #[test]
     fn a_value_is_fresh_until_the_next_poll_is_overdue() {

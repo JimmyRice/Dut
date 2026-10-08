@@ -222,9 +222,9 @@ pub trait ReferenceDataSource: Send + Sync + 'static {
 | `source() -> SourceId` | Stable source identity |
 | `FeedState<T>` | `latest() -> Option<&Polled<T>>`, `health()`, `attempts()` |
 | `Polled<T>` | `value() -> &Arc<T>`, `fetched_at()` |
-| `Schedule` | `interval`, `first_poll_after`, `retry_after`, `fresh_for`, `stale_if_error`, `blind_after`: all Duration |
+| `Schedule` | `const` builder: `Schedule::every(interval)`, then `.first_poll_after(d)`, `.retry_after(d)`, `.fresh_for(d)`, `.stale_if_error(d)`, `.blind_after(d)`; built in `const` items, where a zero interval or retry delay, or freshness shorter than the interval, fails the build |
 
-Borrow a watch value briefly; holding it prevents the poller from publishing. `FeedHandle<NetworkStatus>` implements `LineStatusSource`, and `FeedHandle<ReferenceData>` implements `ReferenceDataSource`. `retry_after` below the interval retries sooner after failure; at or above the interval keeps the normal schedule. Defaults are in [polled feeds](ARCHITECTURE.md#polled-feeds).
+Borrow a watch value briefly; holding it prevents the poller from publishing. `FeedHandle<NetworkStatus>` implements `LineStatusSource`, and `FeedHandle<ReferenceData>` implements `ReferenceDataSource`. `retry_after` below the interval retries sooner after failure; at or above the interval keeps the normal schedule. Unset steps default to: first poll at once, retry after one interval, fresh for one interval, never stale, never blind. Defaults are in [polled feeds](ARCHITECTURE.md#polled-feeds).
 
 <a id="nexttrainservice"></a>
 
@@ -358,7 +358,7 @@ Use `dut-http` and the shared connection pool; never build a client per request.
 | `mtr::open_data::MtrOpenDataFeed::new(http, &base_url, timeout)?` | Feed<Item = ReferenceData>; seven sequential downloads; URL ends with / |
 | `connectivity::ConnectivityCheck::new(http, probes)` | One startup probe per upstream |
 | `connectivity::Probe::json(request)`, `Probe::csv(request)` | Validate the expected format, rejecting captive-portal HTML |
-| `CachePolicy` | default_ttl, ttl_floor, ttl_ceiling, stale_while_revalidate, stale_if_error, failure_backoff |
+| `CachePolicy` | `const` builder: `CachePolicy::fresh_for(default_ttl)`, then `.hints_between(floor, ceiling)`, `.stale_while_revalidate(d)`, `.stale_if_error(d)`, `.failure_backoff(d)`; a floor above the ceiling fails the build. Unset steps take hints as given and never serve stale or back off |
 
 Adapters expose `probe()` for bootstrap’s connectivity check. `RefreshingCache` remains private to `dut-upstream`.
 
