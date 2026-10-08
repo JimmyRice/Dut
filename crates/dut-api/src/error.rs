@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use axum::{
     Json,
     http::StatusCode,
@@ -46,7 +48,7 @@ impl ApiError {
     /// The error as it appears in response bodies.
     pub(crate) fn detail(&self) -> ErrorDetail {
         ErrorDetail {
-            code: self.code().to_owned(),
+            code: self.code(),
             message: self.client_message(),
         }
     }
@@ -76,20 +78,18 @@ impl ApiError {
         }
     }
 
-    fn client_message(&self) -> String {
+    fn client_message(&self) -> Cow<'static, str> {
         match self {
-            Self::NotFound { path } => format!("No route matches {path}"),
-            Self::UnknownLine => "No line matches the requested line code".to_owned(),
-            Self::UnknownStation => "No station matches the requested station code".to_owned(),
+            Self::NotFound { path } => format!("No route matches {path}").into(),
+            Self::UnknownLine => "No line matches the requested line code".into(),
+            Self::UnknownStation => "No station matches the requested station code".into(),
             Self::StationNotOnLine => {
-                "The requested line does not serve the requested station".to_owned()
+                "The requested line does not serve the requested station".into()
             }
-            Self::UnknownSource => "No open data file matches the requested name".to_owned(),
-            Self::InvalidQuery => {
-                "The query string has a malformed or repeated parameter".to_owned()
-            }
-            Self::UnknownScenario => "No mock scenario matches the requested name".to_owned(),
-            Self::UpstreamUnavailable => "An upstream service is unavailable".to_owned(),
+            Self::UnknownSource => "No open data file matches the requested name".into(),
+            Self::InvalidQuery => "The query string has a malformed or repeated parameter".into(),
+            Self::UnknownScenario => "No mock scenario matches the requested name".into(),
+            Self::UpstreamUnavailable => "An upstream service is unavailable".into(),
         }
     }
 }
