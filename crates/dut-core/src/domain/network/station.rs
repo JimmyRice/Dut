@@ -51,6 +51,10 @@ impl StationCode {
     ///
     /// const TSEUNG_KWAN_O: StationCode = StationCode::from_static("TK0");
     /// ```
+    #[expect(
+        clippy::panic,
+        reason = "evaluated in const items, where a panic is a build error"
+    )]
     pub const fn from_static(code: &str) -> Self {
         match ThreeLetters::parse(code.as_bytes()) {
             Some(letters) => Self(letters),

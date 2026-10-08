@@ -39,6 +39,9 @@ const FEED_ORDER: [Line; 11] = [
 /// interval plus the 3-second request timeout.
 const POLL_INTERVAL: i64 = 30;
 const FRESH_FOR: i64 = 33;
+// A poll must stay fresh until the next, or a fresh response would expire
+// before it was fetched.
+const _: () = assert!(FRESH_FOR >= POLL_INTERVAL);
 
 const HOUR: i64 = 60 * 60;
 const DAY: i64 = 24 * HOUR;
@@ -65,8 +68,8 @@ pub(crate) fn simulate(
         ((poll - polls_ago) * POLL_INTERVAL, Freshness::Stale)
     } else {
         let fetched_at = poll * POLL_INTERVAL;
-        let fresh_for = (FRESH_FOR - (now - fetched_at)) as u64;
-        let expires_in = Duration::from_secs(fresh_for);
+        let fresh_for = FRESH_FOR - (now - fetched_at);
+        let expires_in = Duration::from_secs(u64::try_from(fresh_for).unwrap_or(0));
         (fetched_at, Freshness::Fresh { expires_in })
     };
 

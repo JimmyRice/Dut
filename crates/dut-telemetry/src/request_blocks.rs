@@ -88,9 +88,13 @@ where
             .event_scope(event)
             .map(|scope| scope.from_root().collect())
             .unwrap_or_default();
-        match scope.iter().rposition(|span| span.name() == REQUEST_SPAN) {
-            Some(index) => self.buffer(event, &now, &scope[index], &scope[index + 1..]),
-            None => self.print(event, &now, &scope),
+        let request = scope
+            .iter()
+            .rposition(|span| span.name() == REQUEST_SPAN)
+            .and_then(|index| scope.get(index..));
+        match request {
+            Some([request, inner @ ..]) => self.buffer(event, &now, request, inner),
+            _ => self.print(event, &now, &scope),
         }
     }
 

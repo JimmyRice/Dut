@@ -204,10 +204,7 @@ impl Departures {
         position: usize,
     ) -> Option<TrainArrival> {
         let turns = platforms::at(self.line, self.station, self.direction);
-        let platforms = turns
-            .get(number.rem_euclid(turns.len().max(1) as i64) as usize)
-            .copied()
-            .unwrap_or(Platforms::NONE);
+        let platforms = cyclic(turns, number).copied().unwrap_or(Platforms::NONE);
         // The East Rail Line tells arrivals from departures, which are where
         // a train starts.
         let time_type =
@@ -236,7 +233,11 @@ impl Departures {
         let window = now.div_euclid(LAST_TRAIN_WINDOW);
         let mut rng = self.seed.stream(
             Purpose::LastTrain,
-            &[self.line_key(), self.direction_key(), window as u64],
+            &[
+                self.line_key(),
+                self.direction_key(),
+                window.cast_unsigned(),
+            ],
         );
         Some(window * LAST_TRAIN_WINDOW + rng.between(2 * 60, LAST_TRAIN_WINDOW - 2 * 60))
     }
@@ -282,8 +283,8 @@ impl Schedule {
             workings,
             headway,
             spread: headway * spread_percent / 100,
-            phase: start.below(headway as u64) as i64,
-            turn: start.below(workings.len() as u64) as i64,
+            phase: start.between(0, headway - 1),
+            turn: i64::try_from(start.index(workings.len())).unwrap_or(0),
         }
     }
 
@@ -296,22 +297,29 @@ impl Schedule {
             &[
                 departures.line_key(),
                 departures.direction_key(),
-                number as u64,
+                number.cast_unsigned(),
             ],
         );
         let deviation = rng.between(-self.spread, self.spread);
         let cancelled = conditions.delayed && rng.percent(12);
         let via_racecourse =
             conditions.race_day && departures.line == Line::EastRail && rng.percent(35);
-        let turn = (number + self.turn).rem_euclid(self.workings.len().max(1) as i64);
 
         Some(Train {
             passes_reference: number * self.headway + self.phase + deviation,
-            working: *self.workings.get(turn as usize)?,
+            working: *cyclic(self.workings, number + self.turn)?,
             cancelled,
             via_racecourse,
         })
     }
+}
+
+/// The item `number` lands on when `items` repeat end to end in both
+/// directions, or `None` when there are no items.
+fn cyclic<T>(items: &[T], number: i64) -> Option<&T> {
+    let len = i64::try_from(items.len()).ok()?;
+    let index = usize::try_from(number.checked_rem_euclid(len)?).ok()?;
+    items.get(index)
 }
 
 /// The time the Next Train API publishes for a train due at `due`: whole
@@ -380,8 +388,8 @@ mod tests {
         for line in Line::with_next_train() {
             for &station in line.stations() {
                 for scenario in SERVICE {
-                    for seed in 0..3 {
-                        let generated_at = later(seed as i64 * 7_919);
+                    for seed in 0..3_u64 {
+                        let generated_at = later(seed.cast_signed() * 7_919);
                         let board = simulate(
                             line,
                             station,
