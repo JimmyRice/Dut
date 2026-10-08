@@ -290,7 +290,7 @@ All modules below live under `dut_core::domain`. Parse input once at the boundar
 | `Station` | `find(code)` validates membership and provides names; `all()` is code-sorted |
 | `Direction`, `ByDirection<T>` | MTR Up/Down; `ByDirection::get(direction)` |
 
-A syntactically valid station code can still be unknown. Check `Station::find` or `Line::serves`. `scripts/sync-network.py --write` regenerates `STATIONS` between GENERATED markers; line layouts, branches, and termini are reviewed by hand in `line.rs`.
+A syntactically valid station code can still be unknown. Check `Station::find` or `Line::serves`. `scripts/sync-network.py --write` regenerates `STATIONS` between GENERATED markers; line layouts, branches, and termini are reviewed by hand in `line.rs`. Both tables are checked as they compile: an unsorted or repeated station, a malformed colour, a line station missing from `STATIONS`, a terminus off its line, or branches that disagree with their line's stations fail the build.
 
 <a id="reference"></a>
 

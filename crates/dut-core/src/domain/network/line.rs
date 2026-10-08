@@ -1,6 +1,10 @@
 use thiserror::Error;
 
-use crate::domain::{localized::Localized, network::StationCode, string_enum::string_enum};
+use crate::domain::{
+    localized::Localized,
+    network::{Station, StationCode},
+    string_enum::string_enum,
+};
 
 /// Expands to a static slice of station codes, validated at compile time.
 macro_rules! codes {
@@ -383,12 +387,118 @@ const LIGHT_RAIL: LineProfile = LineProfile {
     termini: ByDirection::new(codes![], codes![]),
 };
 
+// Every profile is checked as it compiles, so a mistyped station or a branch
+// that drifts from its line fails the build rather than a test.
+const _: () = {
+    let mut lines = Line::ALL.as_slice();
+    while let [line, rest @ ..] = lines {
+        line.profile().check();
+        lines = rest;
+    }
+};
+
+impl LineProfile {
+    /// Panics, failing the build, unless the profile is consistent: a
+    /// `#RRGGBB` colour, known stations, termini on the line, and branches
+    /// that between them list exactly the line's stations.
+    const fn check(&self) {
+        assert!(
+            is_hex_colour(self.color),
+            "a line colour must be written #RRGGBB"
+        );
+        assert!(
+            all_within_stations_table(self.stations),
+            "a line lists a station the station table lacks"
+        );
+        assert!(
+            all_within(self.termini.up, self.stations)
+                && all_within(self.termini.down, self.stations),
+            "a line's termini must be among its stations"
+        );
+        if let Layout::Forked(branches) = &self.layout {
+            let mut rest = *branches;
+            while let [branch, tail @ ..] = rest {
+                assert!(
+                    all_within(branch.0, self.stations),
+                    "a branch lists a station its line lacks"
+                );
+                rest = tail;
+            }
+            let mut stations = self.stations;
+            while let [station, tail @ ..] = stations {
+                assert!(
+                    on_a_branch(*station, branches),
+                    "a forked line lists a station no branch reaches"
+                );
+                stations = tail;
+            }
+        }
+    }
+}
+
+const fn is_hex_colour(text: &str) -> bool {
+    let [b'#', digits @ ..] = text.as_bytes() else {
+        return false;
+    };
+    let mut rest = digits;
+    while let [digit, tail @ ..] = rest {
+        if !digit.is_ascii_hexdigit() {
+            return false;
+        }
+        rest = tail;
+    }
+    digits.len() == 6
+}
+
+const fn contains(codes: &[StationCode], code: StationCode) -> bool {
+    let mut rest = codes;
+    while let [first, tail @ ..] = rest {
+        if first.rank() == code.rank() {
+            return true;
+        }
+        rest = tail;
+    }
+    false
+}
+
+const fn all_within(codes: &[StationCode], within: &[StationCode]) -> bool {
+    let mut rest = codes;
+    while let [code, tail @ ..] = rest {
+        if !contains(within, *code) {
+            return false;
+        }
+        rest = tail;
+    }
+    true
+}
+
+const fn all_within_stations_table(codes: &[StationCode]) -> bool {
+    let mut rest = codes;
+    while let [code, tail @ ..] = rest {
+        if !Station::is_known(*code) {
+            return false;
+        }
+        rest = tail;
+    }
+    true
+}
+
+const fn on_a_branch(code: StationCode, branches: &[Branch]) -> bool {
+    let mut rest = branches;
+    while let [branch, tail @ ..] = rest {
+        if contains(branch.0, code) {
+            return true;
+        }
+        rest = tail;
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
 
     use super::*;
-    use crate::domain::network::Station;
     use crate::station;
 
     fn code(code: &str) -> StationCode {
@@ -415,46 +525,6 @@ mod tests {
 
     fn towards(line: Line, station: &str, direction: Direction) -> Vec<StationCode> {
         line.towards(code(station), direction).copied().collect()
-    }
-
-    fn termini(line: Line) -> impl Iterator<Item = &'static StationCode> {
-        let termini = line.termini();
-        termini.up.iter().chain(termini.down.iter())
-    }
-
-    #[test]
-    fn every_listed_station_is_known() {
-        for line in Line::ALL {
-            for station in line.stations().iter().chain(termini(line)) {
-                assert!(
-                    Station::find(*station).is_some(),
-                    "{line} lists unknown station {station}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn termini_are_stations_on_the_line() {
-        for line in Line::with_next_train() {
-            for station in termini(line) {
-                assert!(line.serves(*station), "{line} does not serve {station}");
-            }
-        }
-    }
-
-    #[test]
-    fn branches_cover_exactly_the_stations_of_their_line() {
-        for line in Line::ALL {
-            if let Layout::Forked(branches) = line.profile().layout {
-                let on_branches: HashSet<StationCode> = branches
-                    .iter()
-                    .flat_map(|branch| branch.0.iter().copied())
-                    .collect();
-                let on_line: HashSet<StationCode> = line.stations().iter().copied().collect();
-                assert_eq!(on_branches, on_line, "{line}");
-            }
-        }
     }
 
     /// A direction may only run out at one of its own termini. This catches a
