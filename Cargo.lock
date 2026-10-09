@@ -412,7 +412,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "dut"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "axum",
  "clap",
@@ -440,7 +440,7 @@ dependencies = [
 
 [[package]]
 name = "dut-api"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "axum",
  "dut-core",
@@ -459,7 +459,7 @@ dependencies = [
 
 [[package]]
 name = "dut-core"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "futures",
  "jiff",
@@ -469,7 +469,7 @@ dependencies = [
 
 [[package]]
 name = "dut-http"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "bytes",
  "dut-telemetry",
@@ -484,7 +484,7 @@ dependencies = [
 
 [[package]]
 name = "dut-mock"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "dut-core",
  "jiff",
@@ -495,7 +495,7 @@ dependencies = [
 
 [[package]]
 name = "dut-monitor"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "dut-core",
  "dut-poll",
@@ -507,7 +507,7 @@ dependencies = [
 
 [[package]]
 name = "dut-poll"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "dut-core",
  "dut-telemetry",
@@ -519,7 +519,7 @@ dependencies = [
 
 [[package]]
 name = "dut-telemetry"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "jiff",
  "nu-ansi-term",
@@ -530,7 +530,7 @@ dependencies = [
 
 [[package]]
 name = "dut-upstream"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "csv",
  "dut-core",
