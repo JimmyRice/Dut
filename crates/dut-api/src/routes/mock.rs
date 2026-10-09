@@ -25,15 +25,20 @@ use crate::{
     },
     error::ApiError,
     http_cache,
-    routes::{mock_events, params},
+    routes::{health, mock_events, params},
 };
 
 const SCENARIO_HEADER: HeaderName = HeaderName::from_static("x-mock-scenario");
 const SEED_HEADER: HeaderName = HeaderName::from_static("x-mock-seed");
 
 /// Simulates data only, so it works with any router state.
+///
+/// `/health` is the same empty `200` as the real probe. It exists so a
+/// client can tell whether the mock API is enabled: when it is not, the
+/// route is an unknown path and answers `404`.
 pub(crate) fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
     Router::new()
+        .route("/health", get(health::health))
         .route("/scenarios", get(scenarios))
         .route("/lines/status", get(line_status))
         .route(
