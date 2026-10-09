@@ -87,6 +87,10 @@ async fn run<F: Feed>(feed: F, schedule: Schedule, state: watch::Sender<FeedStat
     info!(
         interval_ms = millis(schedule.interval),
         first_poll_after_ms = millis(schedule.first_poll_after),
+        retry_after_ms = millis(schedule.retry_after),
+        fresh_for_ms = millis(schedule.fresh_for),
+        stale_if_error_ms = millis(schedule.stale_if_error),
+        blind_after_ms = millis(schedule.blind_after),
         "polling started"
     );
 
