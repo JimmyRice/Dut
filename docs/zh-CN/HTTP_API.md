@@ -54,6 +54,7 @@
 | `GET` | `/api/data/light-rail` | 轻铁车站和路线 |
 | `GET` | `/api/data/light-rail-fares` | 轻铁车费 |
 | `GET` | `/api/data/accessibility` | 设施目录和各站设施 |
+| `GET` | `/api/mock/health` | Mock 可用性检查；需启用 |
 | `GET` | `/api/mock/scenarios` | 可用模拟场景；需要先启用 |
 | `GET` | `/api/mock/lines/status` | 模拟服务状态 |
 | `GET` | `/api/mock/lines/{line}/stations/{station}/next-trains` | 模拟单线到站板 |
@@ -1079,6 +1080,19 @@ curl --compressed http://127.0.0.1:3000/api/data/accessibility
 
 通过 `--mock-api` 或 `DUT_MOCK_API=true` 启用，未启用的路径返回 `404 not_found`。模拟不访问上游，共用正式响应契约、gzip、请求 ID 及错误映射。正式路由忽略 Mock 查询参数。模拟数据和错误适合测试客户端行为，并非乘客实时班次。
 
+**可用性检查。** `GET /api/mock/health` 让客户端得知 Mock API 是否已启用。无任何参数，响应与[存活检查](#health)相同，为空 `200`：无内容类型，`Cache-Control: no-store`，另带 `x-request-id`，不做模拟。Mock API 未启用时该路径为未知路径，返回 JSON `404 not_found`；客户端遇到其他结果都应视为 Mock 不可用。
+
+```bash
+curl -i http://127.0.0.1:3000/api/mock/health
+```
+
+```http
+HTTP/1.1 200 OK
+cache-control: no-store
+x-request-id: fbce04e4-cfce-4880-9725-ad7fd10a5714
+content-length: 0
+```
+
 | 查询 | 含义 |
 | --- | --- |
 | `scenario` | 可选，不区分大小写，场景名或 `random`；不传则按权重随机 |
@@ -1531,6 +1545,7 @@ Header：`Cache-Control: no-cache`；`X-Accel-Buffering: no`，避免 nginx 扣�
 
 | 日期 | 变更 |
 | --- | --- |
+| 2026-10-10 | 新增需启用的 Mock 路由 `GET /api/mock/health`：Mock API 启用时返回空 `200`，否则返回 `404 not_found`。正式契约不变。 |
 | 2026-10-08 | 新增需启用的 Mock 路由 `GET /api/mock/events`：以 Server-Sent Events 推送模拟的 `line_status` 变更，支持 `scenario`、`seed` 和 `interval`。正式契约不变。 |
 | 2026-10-07 | 文档重写为英文，新增粤语及国语版本。明确 no-cache、重启行为、健康事件及推送规划。HTTP 契约不变，保留原有样本。 |
 | 2026-10-02 | 不兼容：正式和 Mock 列车的 `platform` 整数改为 `platforms` 整数数组。机场支持 `[1, 3]`／`[2, 4]`，未知值用 `[]` 并保留列车，修复此前 `1/3` 导致机场板失败。 |

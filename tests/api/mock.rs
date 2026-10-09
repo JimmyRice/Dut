@@ -1,5 +1,5 @@
 use crate::support::{NEXT_TRAIN_PATH, TestApp, TestResponse};
-use axum::http::{StatusCode, header};
+use axum::http::{Method, StatusCode, header};
 use serde_json::{Value, json};
 use wiremock::{Mock, ResponseTemplate, matchers::path};
 
@@ -466,4 +466,29 @@ async fn the_event_stream_is_off_unless_the_mock_api_is_enabled() {
     let response = app.get("/api/mock/events").await;
 
     response.assert_json(StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn the_mock_health_check_answers_ok_with_no_body() {
+    let app = TestApp::with_mock_api().await;
+
+    let response = app.send(Method::GET, "/api/mock/health").await;
+
+    assert_eq!(response.status, StatusCode::OK);
+    assert!(response.headers.get(header::CONTENT_TYPE).is_none());
+    assert_eq!(
+        response.headers.get(header::CACHE_CONTROL),
+        Some(&header::HeaderValue::from_static("no-store"))
+    );
+    assert!(response.body.is_empty());
+}
+
+#[tokio::test]
+async fn the_mock_health_check_is_off_unless_the_mock_api_is_enabled() {
+    let app = TestApp::start().await;
+
+    let response = app.get("/api/mock/health").await;
+
+    response.assert_json(StatusCode::NOT_FOUND);
+    assert_eq!(response.body["error"]["code"], "not_found");
 }

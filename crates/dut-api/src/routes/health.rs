@@ -17,6 +17,7 @@ pub(crate) fn router() -> Router {
     Router::new().route("/api/health", get(health))
 }
 
-async fn health() -> impl IntoResponse {
+/// Shared with the mock API's own check, which must answer identically.
+pub(crate) async fn health() -> impl IntoResponse {
     (StatusCode::OK, [(CACHE_CONTROL, http_cache::no_store())])
 }
