@@ -120,6 +120,13 @@ cargo test
 cargo deny check advisories bans sources
 ```
 
-The `cargo-deny` check does not cover licences (see `deny.toml`). The Code quality workflow runs all four commands on every push and pull request.
+The `cargo-deny` check does not cover licences (see `deny.toml`). The Code quality workflow runs all four commands on every pull request and on every push to `develop`, `staging`, and `master`.
 
 See `ARCHITECTURE.md` for the dependency direction and feature workflow.
+
+## Branches
+
+Merge every change into `develop` first, then promote it to `staging`, then to
+`master`. Never merge a feature branch straight into `staging` or `master`.
+Each of the three branches must pass the Code quality workflow; only `master`
+and `v*` tags build container images and release binaries.
