@@ -164,6 +164,12 @@ docker run --rm -p 3000:3000 dut
 docker buildx build --platform linux/amd64,linux/arm64 -t dut .
 ```
 
+映像預設用 `dist` profile 構建。傳入 `PROFILE=min` 就可以喺同一個基礎映像上構建體積最細嘅程式：
+
+```bash
+docker build --build-arg PROFILE=min -t dut:min .
+```
+
 健康檢查交畀編排系統或負載平衡器，請求 `GET /api/health`；映像冇 `HEALTHCHECK`。
 
 ```bash
@@ -181,7 +187,7 @@ git tag v0.6.0
 git push origin v0.6.0
 ```
 
-[release.yml](../../.github/workflows/release.yml) 發佈六個平台程式同 `SHA256SUMS`；tag 有 `-` 就係預發佈。[docker.yml](../../.github/workflows/docker.yml) 推送版本號同次版本 tag，1.0 起再加主版本 tag；預發佈唔更新 `latest`。`master` 上相關程式或 Dockerfile 改動會更新 `edge`。手動跑 Release 工作流程只會保存構建產物，唔會建立 release。
+[release.yml](../../.github/workflows/release.yml) 發佈六個平台嘅 `dist` 同 `min` 兩種 profile 程式、Linux 嘅 UPX 壓縮 `min` 程式同 `SHA256SUMS`；tag 有 `-` 就係預發佈。[docker.yml](../../.github/workflows/docker.yml) 推送版本號同次版本 tag，1.0 起再加主版本 tag；預發佈唔更新 `latest`。`master` 上相關程式或 Dockerfile 改動會更新 `edge`。每個 tag 都有加 `-min` 後綴嘅 `min` 版本，例如 `latest-min`。手動跑 Release 工作流程只會保存構建產物，唔會建立 release。
 
 | 平台 | 架構 | 壓縮檔 |
 | --- | --- | --- |
@@ -191,6 +197,10 @@ git push origin v0.6.0
 | macOS | Intel | `dut-x86_64-apple-darwin.tar.gz` |
 | Windows | x86-64 | `dut-x86_64-pc-windows-msvc.zip` |
 | Windows | arm64 | `dut-aarch64-pc-windows-msvc.zip` |
+
+`min` 壓縮檔喺副檔名前加 `-min`，例如 `dut-x86_64-unknown-linux-musl-min.tar.gz`；Linux 嘅 UPX 版本加 `-min-upx`。
+
+`dist` 係預設版本，亦係部署時應該揀嘅版本，兼顧體積同請求速度。`min` 將所有 crate 按體積優化，程式細大約三分一，但處理請求會慢啲。UPX 可以再縮細 `min` 程式喺磁碟上嘅體積，但每次啟動都要解壓到私有記憶體，運行時用嘅記憶體反而更多。本機用 `cargo build --profile min` 就得到 `target/min/dut`。
 
 Linux 版本係靜態連結，唔需要 glibc；自行用精簡容器時仍要裝 `ca-certificates`，憑證放喺其他位置可以用 `SSL_CERT_FILE`。Windows 版本已包含 C runtime。發佈構建用 fat LTO 並移除符號；panic 會終止進程，部署時要設自動重啟。本機用 `cargo build --profile dist` 就得到相同 profile 嘅 `target/dist/dut`，編譯會耐過 release。
 

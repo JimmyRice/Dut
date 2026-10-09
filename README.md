@@ -164,6 +164,12 @@ docker run --rm -p 3000:3000 dut
 docker buildx build --platform linux/amd64,linux/arm64 -t dut .
 ```
 
+The image builds with the `dist` profile. Pass `PROFILE=min` for the smallest binary on the same base image:
+
+```bash
+docker build --build-arg PROFILE=min -t dut:min .
+```
+
 Use the orchestrator or load balancer to probe `GET /api/health`; the image has no `HEALTHCHECK`.
 
 ```bash
@@ -181,7 +187,7 @@ git tag v0.6.0
 git push origin v0.6.0
 ```
 
-[release.yml](.github/workflows/release.yml) publishes six binaries plus `SHA256SUMS`. Tags containing `-` are prereleases. [docker.yml](.github/workflows/docker.yml) publishes version and minor tags, plus a major tag from 1.0 onwards; prereleases do not update `latest`. Relevant code or Dockerfile changes on `master` update `edge`. A manual Release workflow run stores build artifacts without creating a release.
+[release.yml](.github/workflows/release.yml) publishes six binaries for each of the `dist` and `min` profiles, UPX-packed `min` binaries for Linux, and `SHA256SUMS`. Tags containing `-` are prereleases. [docker.yml](.github/workflows/docker.yml) publishes version and minor tags, plus a major tag from 1.0 onwards; prereleases do not update `latest`. Relevant code or Dockerfile changes on `master` update `edge`. Each tag has a `min` counterpart with a `-min` suffix, such as `latest-min`. A manual Release workflow run stores build artifacts without creating a release.
 
 | Platform | Architecture | Archive |
 | --- | --- | --- |
@@ -191,6 +197,10 @@ git push origin v0.6.0
 | macOS | Intel | `dut-x86_64-apple-darwin.tar.gz` |
 | Windows | x86-64 | `dut-x86_64-pc-windows-msvc.zip` |
 | Windows | arm64 | `dut-aarch64-pc-windows-msvc.zip` |
+
+`min` archives add `-min` before the extension, such as `dut-x86_64-unknown-linux-musl-min.tar.gz`, and the packed Linux ones add `-min-upx`.
+
+`dist` is the default and the one to deploy: it balances size and request speed. `min` optimises every crate for size, which takes about a third off the binary but slows request handling. UPX shrinks the `min` binary further on disk, but it unpacks into private memory at every start, so a running process uses more memory, not less. Build `min` locally with `cargo build --profile min` (`target/min/dut`).
 
 Linux builds are statically linked and need no glibc. Custom minimal containers still need `ca-certificates`; use `SSL_CERT_FILE` if the bundle lives elsewhere. Windows builds include the C runtime. Distribution builds use fat LTO and strip symbols; panic aborts the process, so configure automatic restart. Build the same profile locally with `cargo build --profile dist` (`target/dist/dut`). It takes longer than a release build.
 
