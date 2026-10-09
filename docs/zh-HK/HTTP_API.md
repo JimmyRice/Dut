@@ -518,15 +518,15 @@ content-length: 0
 
 第 6–13 節讀同一份記憶體快照，來自七個港鐵 CSV。啟動即刻首次輪詢，之後每 24 小時一次，失敗 5 分鐘後重試。全部成功先發佈。讀取可能要等首次輪詢；請求唔會觸發平台抓取。抓取起計新鮮期 86430 秒，再有 30 日舊資料視窗，之後 `502 upstream_unavailable`。新進程冇舊快照。
 
-Local First 同步可以請求 `/api/data`，比較本機版本，只下載有改嘅數據集。數據集弱 ETag 包括服務版本同內容 hash，例如 `W/"0.5.3-5987f5c9680ce780"`；原始檔只有位元組 hash。下次傳 `If-None-Match`，冇變就回空 `304`，帶 ETag 同快取 header。索引本身冇 ETag。版本只用嚟比較相等，唔好當時間戳或可排序版本。
+Local First 同步可以請求 `/api/data`，比較本機版本，只下載有改嘅數據集。數據集弱 ETag 包括服務版本同內容 hash，例如 `W/"0.5.4-5987f5c9680ce780"`；原始檔只有位元組 hash。下次傳 `If-None-Match`，冇變就回空 `304`，帶 ETag 同快取 header。索引本身冇 ETag。版本只用嚟比較相等，唔好當時間戳或可排序版本。
 
 ```bash
-curl -i -H 'If-None-Match: W/"0.5.3-5987f5c9680ce780"' http://127.0.0.1:3000/api/data/fares
+curl -i -H 'If-None-Match: W/"0.5.4-5987f5c9680ce780"' http://127.0.0.1:3000/api/data/fares
 ```
 
 ```http
 HTTP/1.1 304 Not Modified
-etag: W/"0.5.3-5987f5c9680ce780"
+etag: W/"0.5.4-5987f5c9680ce780"
 cache-control: public, max-age=86000
 ```
 
@@ -564,37 +564,37 @@ curl http://127.0.0.1:3000/api/data
     {
       "name": "stations",
       "path": "/api/data/stations",
-      "revision": "0.5.3-0d1201f5804cd4cd",
+      "revision": "0.5.4-0d1201f5804cd4cd",
       "updated_at": "2023-11-21T18:09:07+08:00"
     },
     {
       "name": "fares",
       "path": "/api/data/fares",
-      "revision": "0.5.3-5987f5c9680ce780",
+      "revision": "0.5.4-5987f5c9680ce780",
       "updated_at": "2026-04-03T01:02:50+08:00"
     },
     {
       "name": "airport-express-fares",
       "path": "/api/data/airport-express-fares",
-      "revision": "0.5.3-545393302ce4c18f",
+      "revision": "0.5.4-545393302ce4c18f",
       "updated_at": "2025-06-22T01:05:16+08:00"
     },
     {
       "name": "light-rail",
       "path": "/api/data/light-rail",
-      "revision": "0.5.3-97a676332b659216",
+      "revision": "0.5.4-97a676332b659216",
       "updated_at": "2026-07-05T00:58:02+08:00"
     },
     {
       "name": "light-rail-fares",
       "path": "/api/data/light-rail-fares",
-      "revision": "0.5.3-e9deb534253c3bde",
+      "revision": "0.5.4-e9deb534253c3bde",
       "updated_at": "2024-06-30T01:39:03+08:00"
     },
     {
       "name": "accessibility",
       "path": "/api/data/accessibility",
-      "revision": "0.5.3-b199444f08da98bf",
+      "revision": "0.5.4-b199444f08da98bf",
       "updated_at": "2023-06-25T02:28:09+08:00"
     }
   ],

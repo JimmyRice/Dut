@@ -7,7 +7,7 @@ resolver = "3"
 
 # Every crate shares one version, so a release bumps it here alone.
 [workspace.package]
-version = "0.5.3"
+version = "0.5.4"
 edition = "2024"
 publish = false
 
