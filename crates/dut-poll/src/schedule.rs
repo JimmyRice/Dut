@@ -35,8 +35,8 @@ pub struct Schedule {
     pub(crate) interval: Duration,
     pub(crate) first_poll_after: Duration,
     pub(crate) retry_after: Duration,
-    fresh_for: Duration,
-    stale_if_error: Duration,
+    pub(crate) fresh_for: Duration,
+    pub(crate) stale_if_error: Duration,
     pub(crate) blind_after: Duration,
 }
 

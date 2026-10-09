@@ -30,28 +30,14 @@ pub async fn run(command_line: CommandLine) -> Result<(), StartupError> {
 /// Once the socket is bound, every upstream is probed once in the background
 /// and the outcome is logged; requests are served meanwhile.
 async fn serve(config: AppConfig) -> Result<(), StartupError> {
-    let mtr = config.mtr();
-    let hko = config.hko();
-    let polling = config.polling();
     info!(
         bind_address = %config.bind_address(),
         mock_api = config.mock_api(),
         outbound_http_timeout_ms = millis(config.outbound_http_timeout()),
         outbound_proxy = ?config.outbound_proxy(),
-        next_train_endpoint = mtr.next_train_endpoint,
-        line_status_endpoint = mtr.line_status_endpoint,
-        weather_warnings_endpoint = hko.warnings_endpoint,
-        open_data_endpoint = mtr.open_data_endpoint,
-        mtr_request_timeout_ms = millis(mtr.request_timeout),
-        open_data_timeout_ms = millis(mtr.open_data_timeout),
-        hko_request_timeout_ms = millis(hko.request_timeout),
-        next_train_cache = ?mtr.next_train_cache,
-        line_status_poll = ?polling.line_status,
-        weather_warnings_poll = ?polling.weather_warnings,
-        next_train_signals_poll = ?polling.next_train_signals,
-        open_data_poll = ?polling.open_data,
         "starting server"
     );
+    log_upstreams(&config);
 
     let App {
         router,
@@ -77,6 +63,33 @@ async fn serve(config: AppConfig) -> Result<(), StartupError> {
     serve_until_stopped(serving, stop_requested, SHUTDOWN_GRACE)
         .await
         .map_err(StartupError::Serve)
+}
+
+/// Logs where each upstream is read and how long a request to it may take,
+/// one line each, so a long endpoint does not bury the others. The caches
+/// and pollers built on them log their own policies as they start.
+fn log_upstreams(config: &AppConfig) {
+    let (mtr, hko) = (config.mtr(), config.hko());
+    for (upstream, endpoint, timeout) in [
+        (
+            "mtr.next_train",
+            &mtr.next_train_endpoint,
+            mtr.request_timeout,
+        ),
+        (
+            "mtr.line_status",
+            &mtr.line_status_endpoint,
+            mtr.request_timeout,
+        ),
+        (
+            "mtr.open_data",
+            &mtr.open_data_endpoint,
+            mtr.open_data_timeout,
+        ),
+        ("hko.warnings", &hko.warnings_endpoint, hko.request_timeout),
+    ] {
+        info!(upstream, endpoint = %endpoint, timeout_ms = millis(timeout), "upstream configured");
+    }
 }
 
 /// How long in-flight requests may take to finish once a stop is requested.
