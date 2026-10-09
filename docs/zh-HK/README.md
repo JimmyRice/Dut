@@ -1,6 +1,6 @@
 # Dut (嘟)
 
-[English](../../README.md) · [繁體粵語](README.md) · [简体中文](../zh-CN/README.md)
+[English](../../README.md) · [繁體廣東話](README.md) · [简体中文](../zh-CN/README.md)
 
 Dut 係 MTRGo (Not Yet Released or Open-Sourced) 嘅 Rust 後端，將港鐵開放數據整理成 App 可以直接用嘅 JSON：路綫同車站、服務狀態、下一班車、車費、輕鐵路綫，以及無障礙設施。
 

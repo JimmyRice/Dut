@@ -1,6 +1,6 @@
 # Rust API
 
-[English](../../RUST_API.md) · [繁體粵語](../zh-HK/RUST_API.md) · [简体中文](RUST_API.md)
+[English](../../RUST_API.md) · [繁體廣東話](../zh-HK/RUST_API.md) · [简体中文](RUST_API.md)
 
 编写 Dut 业务代码时，可通过本文档查询应传递哪些 domain 类型、调用哪些服务及实现哪些 trait。生产环境的具体依赖在 `src/bootstrap/app.rs` 组装。业务使用的 trait、handle、事件或入口变化时，需要同步本文档及翻译。
 

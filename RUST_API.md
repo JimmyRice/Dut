@@ -1,6 +1,6 @@
 # Rust API
 
-[English](RUST_API.md) · [繁體粵語](docs/zh-HK/RUST_API.md) · [简体中文](docs/zh-CN/RUST_API.md)
+[English](RUST_API.md) · [繁體廣東話](docs/zh-HK/RUST_API.md) · [简体中文](docs/zh-CN/RUST_API.md)
 
 Use this reference when writing business logic in Dut: which domain types to pass around, which services to call, and which traits to implement. Concrete production dependencies are constructed in `src/bootstrap/app.rs`. Update this document and its translations whenever a business-facing trait, handle, event, or entry point changes.
 
