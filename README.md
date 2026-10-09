@@ -94,6 +94,7 @@ The default listener is `127.0.0.1:3000`. This preserved capture from 2026-09-28
 | `GET` | `/api/data/light-rail` | Light Rail stops and routes |
 | `GET` | `/api/data/light-rail-fares` | Light Rail fares |
 | `GET` | `/api/data/accessibility` | Facility catalogue and station facilities |
+| `GET` | `/api/mock/health` | Mock availability check; opt-in |
 | `GET` | `/api/mock/scenarios` | Available simulation scenarios; opt-in |
 | `GET` | `/api/mock/lines/status` | Simulated service status |
 | `GET` | `/api/mock/lines/{line}/stations/{station}/next-trains` | Simulated board for one line |
