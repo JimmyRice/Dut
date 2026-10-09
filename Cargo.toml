@@ -95,6 +95,19 @@ aws-lc-sys.opt-level = "s"
 regex-automata.opt-level = "s"
 regex-syntax.opt-level = "s"
 
+# The smallest binary, for disks and images where every megabyte counts:
+# `cargo build --profile min`. It repeats dist's settings rather than
+# inheriting them, because dist's per-package opt-levels would otherwise
+# carry over and outrank this profile's own. Optimising everything for size
+# slows request handling, so dist stays the default everywhere.
+[profile.min]
+inherits = "release"
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+
 # The binary: configuration, wiring, and the process lifecycle. Everything it
 # assembles lives in crates/.
 [package]

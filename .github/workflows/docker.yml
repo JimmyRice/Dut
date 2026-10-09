@@ -4,6 +4,10 @@
 # A v* tag publishes 1.2.3, 1.2, 1 and latest. A push to master publishes
 # edge, so the newest build can be tried before it is released. Every image
 # is also tagged with its commit, as sha-<short sha>.
+#
+# These tags carry the default dist build. The smallest build, from the min
+# profile, is published alongside it under the same tags with a -min suffix:
+# 1.2.3-min, latest-min, edge-min and so on.
 
 name: Container image
 
@@ -33,7 +37,7 @@ concurrency:
 
 jobs:
   image:
-    name: Build and push
+    name: Build and push ${{ matrix.profile }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -41,6 +45,14 @@ jobs:
       packages: write # push the image to ghcr.io
       id-token: write # sign the attestation with a Sigstore certificate
       attestations: write # store the attestation
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: dist
+            suffix: ""
+          - profile: min
+            suffix: -min
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -59,6 +71,8 @@ jobs:
           DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
         with:
           images: ${{ env.IMAGE }}
+          flavor: |
+            suffix=${{ matrix.suffix }},onlatest=true
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -76,23 +90,25 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      # The GitHub Actions cache keeps image layers between runs. It does not
-      # keep the Dockerfile's cargo cache mounts, so a source change compiles
-      # the dependencies again.
+      # The GitHub Actions cache keeps image layers between runs, one scope per
+      # profile so that neither evicts the other's. It does not keep the
+      # Dockerfile's cargo cache mounts, so a source change compiles the
+      # dependencies again.
       - name: Build and push
         id: push
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: linux/amd64,linux/arm64
+          build-args: PROFILE=${{ matrix.profile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
           provenance: mode=max
           sbom: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.profile }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.profile }}
 
       # Artifact attestations need a public repository on GitHub Free, Pro
       # and Team plans. Verify with:

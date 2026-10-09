@@ -1,6 +1,6 @@
 # Architecture
 
-[English](ARCHITECTURE.md) · [繁體粵語](docs/zh-HK/ARCHITECTURE.md) · [简体中文](docs/zh-CN/ARCHITECTURE.md)
+[English](ARCHITECTURE.md) · [繁體廣東話](docs/zh-HK/ARCHITECTURE.md) · [简体中文](docs/zh-CN/ARCHITECTURE.md)
 
 Dut is a Cargo workspace with one composition root. Dependencies point towards the domain and application: HTTP, adapters, and background tasks use business contracts, while the business code stays independent of transport and I/O. Each crate manifest enforces that boundary.
 
@@ -67,7 +67,7 @@ Scheduled poll
 
 Every `lib.rs` and `mod.rs` is an index: documentation, module declarations, and re-exports only. Implementation files are named for their purpose. Export only what another crate uses; keep the rest private or `pub(crate)`. `unreachable_pub` helps enforce that. `dut-core` exposes its domain and application modules; the root library exposes only startup and route-test entry points.
 
-Root Cargo commands cover all default workspace members. Versions and lints are inherited from the workspace. The `dist` profile uses fat LTO, one codegen unit, stripped symbols, and abort-on-panic; selected startup and HTTPS dependencies optimise for size while request handling keeps its speed-oriented defaults.
+Root Cargo commands cover all default workspace members. Versions and lints are inherited from the workspace. The `dist` profile uses fat LTO, one codegen unit, stripped symbols, and abort-on-panic; selected startup and HTTPS dependencies optimise for size while request handling keeps its speed-oriented defaults. The `min` profile repeats those settings but optimises every crate for size, for the smallest binary at some cost in speed.
 
 <a id="configuration"></a>
 

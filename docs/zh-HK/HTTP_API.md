@@ -1,6 +1,6 @@
 # HTTP API 文件
 
-[English](../../HTTP_API.md) · [繁體粵語](HTTP_API.md) · [简体中文](../zh-CN/HTTP_API.md)
+[English](../../HTTP_API.md) · [繁體廣東話](HTTP_API.md) · [简体中文](../zh-CN/HTTP_API.md)
 
 呢份文件係 Dut 嘅客戶端合約。接口實作有改動時，同一次改動要更新 URL、方法、參數、範例、欄位、快取、錯誤同變更記錄，並同步全部語言版本。下面嘅實際回應保留自原有文件，係歷史範例，唔係即時資料；節錄仍然係有效 JSON。模擬同示意範例會另外註明。
 

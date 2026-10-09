@@ -1,4 +1,6 @@
-# Builds the dut binary for Linux, macOS and Windows on x86-64 and arm64.
+# Builds the dut binary for Linux, macOS and Windows on x86-64 and arm64,
+# each with the default dist profile and the size-first min profile. The min
+# Linux binaries are also packed with UPX.
 #
 # Pushing a v* tag publishes the archives as a GitHub release. Running the
 # workflow by hand builds the same archives and keeps them as workflow
@@ -50,7 +52,7 @@ jobs:
               sys.exit(1)
 
   build:
-    name: Build ${{ matrix.target }}
+    name: Build ${{ matrix.target }} (${{ matrix.profile }})
     needs: check-version
     # Hand-started runs have no tag to check, so the skipped check must not
     # skip the builds.
@@ -62,7 +64,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        profile: [dist, min]
+        target:
+          - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-musl
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
+          - x86_64-pc-windows-msvc
+          - aarch64-pc-windows-msvc
         include:
+          # dist archives keep their plain names; min archives say so.
+          - profile: min
+            suffix: -min
           # musl links everything statically, so one binary runs on every
           # distribution.
           - target: x86_64-unknown-linux-musl
@@ -83,6 +96,8 @@ jobs:
             runner: windows-11-arm
             rustflags: -C target-feature=+crt-static
     env:
+      PROFILE: ${{ matrix.profile }}
+      SUFFIX: ${{ matrix.suffix }}
       TARGET: ${{ matrix.target }}
       RUSTFLAGS: ${{ matrix.rustflags }}
     defaults:
@@ -107,19 +122,19 @@ jobs:
           echo "CC_${TARGET//-/_}=musl-gcc" >> "$GITHUB_ENV"
 
       - name: Build
-        # The same dist profile the Dockerfile builds the image with.
-        run: cargo build --profile dist --locked --target "$TARGET" --bin dut
+        # The same profile the Dockerfile builds the matching image with.
+        run: cargo build --profile "$PROFILE" --locked --target "$TARGET" --bin dut
 
       - name: Package
         id: package
         run: |
           mkdir dist
-          built="target/$TARGET/dist"
+          built="target/$TARGET/$PROFILE"
           if [[ "$RUNNER_OS" == Windows ]]; then
-            archive="dist/dut-$TARGET.zip"
+            archive="dist/dut-$TARGET$SUFFIX.zip"
             7z a -tzip "$archive" "./$built/dut.exe"
           else
-            archive="dist/dut-$TARGET.tar.gz"
+            archive="dist/dut-$TARGET$SUFFIX.tar.gz"
             tar -czf "$archive" -C "$built" dut
           fi
           echo "archive=$archive" >> "$GITHUB_OUTPUT"
@@ -129,6 +144,48 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           path: ${{ steps.package.outputs.archive }}
+          archive: false
+          if-no-files-found: error
+
+      # Only Linux binaries are packed: a packed macOS binary loses its code
+      # signature, and antivirus software flags packed Windows ones. The
+      # packed binary unpacks itself into memory at every start, so it saves
+      # disk, not memory, and the container images stay unpacked.
+      - name: Pack with UPX
+        id: upx
+        if: runner.os == 'Linux' && matrix.profile == 'min'
+        env:
+          UPX_VERSION: 5.2.1
+        run: |
+          case "$TARGET" in
+            x86_64-*)
+              upx="upx-$UPX_VERSION-amd64_linux"
+              sha256=402162aad30af47e60dbd767fb2e64ca394ace9727ba1f40283641f1d1b91657
+              ;;
+            aarch64-*)
+              upx="upx-$UPX_VERSION-arm64_linux"
+              sha256=a72d112c5970a904a31da0b9c84f919bc16b9a311787c12245508544a78c7d36
+              ;;
+          esac
+          curl --fail --silent --show-error --location --remote-name \
+            "https://github.com/upx/upx/releases/download/v$UPX_VERSION/$upx.tar.xz"
+          echo "$sha256  $upx.tar.xz" | sha256sum --check
+          tar -xJf "$upx.tar.xz"
+
+          mkdir packed
+          "$upx/upx" --ultra-brute -o packed/dut "target/$TARGET/min/dut"
+          "$upx/upx" -t packed/dut
+          # Unpacking happens at run time, so start the binary to prove it.
+          packed/dut --version
+
+          archive="dist/dut-$TARGET-min-upx.tar.gz"
+          tar -czf "$archive" -C packed dut
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      - if: steps.upx.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          path: ${{ steps.upx.outputs.archive }}
           archive: false
           if-no-files-found: error
 

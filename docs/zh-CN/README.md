@@ -1,6 +1,6 @@
 # Dut (嘟)
 
-[English](../../README.md) · [繁體粵語](../zh-HK/README.md) · [简体中文](README.md)
+[English](../../README.md) · [繁體廣東話](../zh-HK/README.md) · [简体中文](README.md)
 
 Dut 是 MTRGo (Not Yet Released or Open-Sourced) 的 Rust 后端，将香港港铁开放数据整理成 App 可以直接使用的 JSON：线路和车站、服务状态、列车到站、车费、轻铁路线及无障碍设施。
 
@@ -164,6 +164,12 @@ docker run --rm -p 3000:3000 dut
 docker buildx build --platform linux/amd64,linux/arm64 -t dut .
 ```
 
+镜像默认使用 `dist` profile 构建。传入 `PROFILE=min` 可在同一基础镜像上构建体积最小的程序：
+
+```bash
+docker build --build-arg PROFILE=min -t dut:min .
+```
+
 健康检查由编排系统或负载均衡器请求 `GET /api/health`；镜像没有 `HEALTHCHECK`。
 
 ```bash
@@ -181,7 +187,7 @@ git tag v0.6.0
 git push origin v0.6.0
 ```
 
-[release.yml](../../.github/workflows/release.yml) 发布六个平台的程序及 `SHA256SUMS`；包含 `-` 的 tag 标为预发布。[docker.yml](../../.github/workflows/docker.yml) 推送版本号和次版本 tag，从 1.0 起增加主版本 tag；预发布不更新 `latest`。`master` 上相关代码或 Dockerfile 改动会更新 `edge`。手动运行 Release 工作流只保存构建产物，不创建 release。
+[release.yml](../../.github/workflows/release.yml) 发布六个平台的 `dist` 与 `min` 两种 profile 程序、Linux 的 UPX 压缩 `min` 程序及 `SHA256SUMS`；包含 `-` 的 tag 标为预发布。[docker.yml](../../.github/workflows/docker.yml) 推送版本号和次版本 tag，从 1.0 起增加主版本 tag；预发布不更新 `latest`。`master` 上相关代码或 Dockerfile 改动会更新 `edge`。每个 tag 都有带 `-min` 后缀的 `min` 版本，例如 `latest-min`。手动运行 Release 工作流只保存构建产物，不创建 release。
 
 | 平台 | 架构 | 压缩包 |
 | --- | --- | --- |
@@ -191,6 +197,10 @@ git push origin v0.6.0
 | macOS | Intel | `dut-x86_64-apple-darwin.tar.gz` |
 | Windows | x86-64 | `dut-x86_64-pc-windows-msvc.zip` |
 | Windows | arm64 | `dut-aarch64-pc-windows-msvc.zip` |
+
+`min` 压缩包在扩展名前加 `-min`，例如 `dut-x86_64-unknown-linux-musl-min.tar.gz`；Linux 的 UPX 版本加 `-min-upx`。
+
+`dist` 是默认版本，也是部署时应选的版本，兼顾体积与请求速度。`min` 将所有 crate 按体积优化，程序约小三分之一，但请求处理较慢。UPX 能进一步缩小 `min` 程序的磁盘体积，但每次启动都会解压到私有内存，运行时占用的内存反而更多。本地执行 `cargo build --profile min` 可得到 `target/min/dut`。
 
 Linux 版本静态链接，不需要 glibc；自行使用精简容器时仍需安装 `ca-certificates`，证书位于其他位置时可设置 `SSL_CERT_FILE`。Windows 版本包含 C runtime。发布构建使用 fat LTO 并移除符号；panic 会终止进程，部署时请配置自动重启。本地执行 `cargo build --profile dist` 可得到同一 profile 的 `target/dist/dut`，编译时间比 release 更长。
 
