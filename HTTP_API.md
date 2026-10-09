@@ -1,6 +1,6 @@
 # HTTP API
 
-[English](HTTP_API.md) · [繁體粵語](docs/zh-HK/HTTP_API.md) · [简体中文](docs/zh-CN/HTTP_API.md)
+[English](HTTP_API.md) · [繁體廣東話](docs/zh-HK/HTTP_API.md) · [简体中文](docs/zh-CN/HTTP_API.md)
 
 This is the client contract for Dut. Update endpoint URLs, methods, parameters, examples, fields, caching, errors, and the changelog in the same change as the implementation. Keep all language versions in sync. The response captures below are preserved from the previous documentation; they are historical examples, not live data. Excerpts remain valid JSON. Simulated and illustrative examples are labelled separately.
 

@@ -1,6 +1,6 @@
 # Architecture
 
-[English](ARCHITECTURE.md) · [繁體粵語](docs/zh-HK/ARCHITECTURE.md) · [简体中文](docs/zh-CN/ARCHITECTURE.md)
+[English](ARCHITECTURE.md) · [繁體廣東話](docs/zh-HK/ARCHITECTURE.md) · [简体中文](docs/zh-CN/ARCHITECTURE.md)
 
 Dut is a Cargo workspace with one composition root. Dependencies point towards the domain and application: HTTP, adapters, and background tasks use business contracts, while the business code stays independent of transport and I/O. Each crate manifest enforces that boundary.
 

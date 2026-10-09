@@ -1,6 +1,6 @@
 # 架構
 
-[English](../../ARCHITECTURE.md) · [繁體粵語](ARCHITECTURE.md) · [简体中文](../zh-CN/ARCHITECTURE.md)
+[English](../../ARCHITECTURE.md) · [繁體廣東話](ARCHITECTURE.md) · [简体中文](../zh-CN/ARCHITECTURE.md)
 
 Dut 係一個 Cargo workspace，只有一個依賴組裝入口。依賴指向 domain 同 application：HTTP、適配器同背景任務用業務合約，業務程式就保持獨立，唔綁傳輸框架或 I/O。各 crate 嘅 manifest 會限制呢個邊界。
 

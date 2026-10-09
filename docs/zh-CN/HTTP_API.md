@@ -1,6 +1,6 @@
 # HTTP API 文档
 
-[English](../../HTTP_API.md) · [繁體粵語](../zh-HK/HTTP_API.md) · [简体中文](HTTP_API.md)
+[English](../../HTTP_API.md) · [繁體廣東話](../zh-HK/HTTP_API.md) · [简体中文](HTTP_API.md)
 
 本文档是 Dut 的客户端契约。修改接口实现时，需要在同一次改动中更新 URL、方法、参数、示例、字段、缓存、错误及变更记录，并同步全部语言版本。下方实际响应保留自原有文档，属于历史示例，并非实时数据；节选仍是有效 JSON。模拟和示意示例会单独标明。
 
