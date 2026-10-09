@@ -182,8 +182,19 @@ where
     K: Clone + Eq + Hash + fmt::Display,
     V: Send + Sync + 'static,
 {
-    /// Creates an empty cache. `name` identifies it in logs.
+    /// Creates an empty cache and logs its policy. `name` identifies it in
+    /// logs.
     pub(crate) fn new(name: &'static str, policy: CachePolicy) -> Self {
+        info!(
+            cache = name,
+            default_ttl_ms = millis(policy.default_ttl),
+            ttl_floor_ms = millis(policy.ttl_floor),
+            ttl_ceiling_ms = millis(policy.ttl_ceiling),
+            stale_while_revalidate_ms = millis(policy.stale_while_revalidate),
+            stale_if_error_ms = millis(policy.stale_if_error),
+            failure_backoff_ms = millis(policy.failure_backoff),
+            "cache configured"
+        );
         Self {
             name,
             policy,
