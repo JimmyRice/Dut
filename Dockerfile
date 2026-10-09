@@ -8,6 +8,11 @@
 # compiler under emulation:
 #
 #   docker buildx build --platform linux/amd64,linux/arm64 -t dut .
+#
+# PROFILE picks the Cargo profile. The default, dist, balances size and
+# speed; min builds the smallest binary instead:
+#
+#   docker buildx build --build-arg PROFILE=min -t dut:min .
 
 ARG RUST_VERSION=1.98
 ARG ALPINE_VERSION=3.24
@@ -19,6 +24,7 @@ COPY --from=xx / /
 RUN apk add --no-cache clang lld
 ARG TARGETPLATFORM
 RUN xx-apk add --no-cache gcc musl-dev
+ARG PROFILE=dist
 
 WORKDIR /src
 # The sources are bind-mounted rather than copied, and the registry and
@@ -31,8 +37,8 @@ RUN --mount=type=bind,source=Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=crates,target=crates \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target,id=dut-target-${TARGETPLATFORM} \
-    xx-cargo build --profile dist --locked --bin dut \
- && binary="target/$(xx-cargo --print-target-triple)/dist/dut" \
+    xx-cargo build --profile "$PROFILE" --locked --bin dut \
+ && binary="target/$(xx-cargo --print-target-triple)/$PROFILE/dut" \
  && xx-verify --static "$binary" \
  && cp "$binary" /usr/local/bin/dut
 

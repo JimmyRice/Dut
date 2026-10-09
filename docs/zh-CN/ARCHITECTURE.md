@@ -67,7 +67,7 @@ Scheduled poll
 
 每个 `lib.rs` 和 `mod.rs` 只做索引：文档、模块声明及重新导出。实现文件按用途命名。仅导出其他 crate 使用的项目，其余使用 private 或 `pub(crate)`；`unreachable_pub` 辅助检查。`dut-core` 公开 domain 和 application，根 library 仅公开启动及路由测试入口。
 
-根目录 Cargo 命令覆盖所有默认 workspace 成员。版本和 lint 从 workspace 继承。`dist` profile 使用 fat LTO、单个 codegen unit、移除符号及 panic abort；部分启动与 HTTPS 依赖按体积优化，请求处理保留以速度为主的默认设置。
+根目录 Cargo 命令覆盖所有默认 workspace 成员。版本和 lint 从 workspace 继承。`dist` profile 使用 fat LTO、单个 codegen unit、移除符号及 panic abort；部分启动与 HTTPS 依赖按体积优化，请求处理保留以速度为主的默认设置。`min` profile 沿用这些设置，但所有 crate 都按体积优化，以部分速度换取最小的程序。
 
 <a id="configuration"></a>
 
