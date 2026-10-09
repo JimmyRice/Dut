@@ -1,6 +1,6 @@
 # 架構
 
-[English](../../ARCHITECTURE.md) · [繁體粵語](ARCHITECTURE.md) · [简体中文](../zh-CN/ARCHITECTURE.md)
+[English](../../ARCHITECTURE.md) · [繁體廣東話](ARCHITECTURE.md) · [简体中文](../zh-CN/ARCHITECTURE.md)
 
 Dut 係一個 Cargo workspace，只有一個依賴組裝入口。依賴指向 domain 同 application：HTTP、適配器同背景任務用業務合約，業務程式就保持獨立，唔綁傳輸框架或 I/O。各 crate 嘅 manifest 會限制呢個邊界。
 
@@ -67,7 +67,7 @@ Scheduled poll
 
 每個 `lib.rs` 同 `mod.rs` 都只做索引：文件、模組宣告同重新匯出。實作檔按用途命名。只匯出其他 crate 要用嘅項目，其餘用 private 或 `pub(crate)`；`unreachable_pub` 協助檢查。`dut-core` 公開 domain 同 application，根 library 只公開啟動同路由測試入口。
 
-根目錄嘅 Cargo 命令會覆蓋所有預設 workspace 成員。版本同 lint 由 workspace 繼承。`dist` profile 用 fat LTO、單一 codegen unit、移除符號同 panic abort；部分啟動同 HTTPS 依賴按體積優化，請求處理保持以速度為主嘅預設。
+根目錄嘅 Cargo 命令會覆蓋所有預設 workspace 成員。版本同 lint 由 workspace 繼承。`dist` profile 用 fat LTO、單一 codegen unit、移除符號同 panic abort；部分啟動同 HTTPS 依賴按體積優化，請求處理保持以速度為主嘅預設。`min` profile 沿用呢啲設定，但所有 crate 都按體積優化，用部分速度換取最細嘅程式。
 
 <a id="configuration"></a>
 
