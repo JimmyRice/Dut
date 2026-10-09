@@ -54,6 +54,7 @@ The local base URL is `http://127.0.0.1:3000`. All routes live under `/api` and 
 | `GET` | `/api/data/light-rail` | Light Rail stops and routes |
 | `GET` | `/api/data/light-rail-fares` | Light Rail fares |
 | `GET` | `/api/data/accessibility` | Facility catalogue and station facilities |
+| `GET` | `/api/mock/health` | Mock availability check; opt-in |
 | `GET` | `/api/mock/scenarios` | Available simulation scenarios; opt-in |
 | `GET` | `/api/mock/lines/status` | Simulated service status |
 | `GET` | `/api/mock/lines/{line}/stations/{station}/next-trains` | Simulated board for one line |
@@ -1079,6 +1080,19 @@ Caching and conditional requests follow [shared open-data behaviour](#open-data)
 
 Enable with `--mock-api` or `DUT_MOCK_API=true`. Disabled paths return `404 not_found`. Simulations perform no upstream I/O and reuse real response contracts, gzip, request IDs, and error mapping. Real routes ignore mock query parameters. Both simulated values and error responses are suitable for testing client behaviour, not for showing live departures to riders.
 
+**Availability check.** `GET /api/mock/health` tells a client whether the mock API is enabled. It takes no parameters and returns the same empty `200` as [liveness](#health): no content type, `Cache-Control: no-store`. It adds a `x-request-id` and does no simulation. When the mock API is disabled the path is unknown, so the response is `404 not_found` (JSON); a client treats any other result as "mock unavailable".
+
+```bash
+curl -i http://127.0.0.1:3000/api/mock/health
+```
+
+```http
+HTTP/1.1 200 OK
+cache-control: no-store
+x-request-id: fbce04e4-cfce-4880-9725-ad7fd10a5714
+content-length: 0
+```
+
 | Query | Meaning |
 | --- | --- |
 | `scenario` | Optional, case-insensitive. A named scenario or `random`; omitted means weighted random |
@@ -1531,6 +1545,7 @@ Stations are grouped in compiled line order. A shared code is the same interchan
 
 | Date | Change |
 | --- | --- |
+| 2026-10-10 | Added the opt-in mock route `GET /api/mock/health`: an empty `200` when the mock API is enabled, `404 not_found` otherwise. Real contracts unchanged. |
 | 2026-10-08 | Added the opt-in mock route `GET /api/mock/events`: a Server-Sent Events stream of simulated `line_status` changes, with `scenario`, `seed`, and `interval`. Real contracts unchanged. |
 | 2026-10-07 | Documentation rewritten in English with Cantonese and Mandarin editions. Clarified no-cache, restart behaviour, health events, and planned push configuration. No HTTP contract change. Existing captures retained. |
 | 2026-10-02 | Breaking: train `platform` integer became `platforms` integer array in real and mock endpoints. Airport supports `[1, 3]` and `[2, 4]`; unreadable values use `[]` without dropping trains. Fixes Airport boards previously failing on `1/3`. |

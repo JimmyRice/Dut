@@ -94,6 +94,7 @@ curl http://127.0.0.1:3000/api/lines/TKL/stations/TKO/next-trains
 | `GET` | `/api/data/light-rail` | 轻铁车站和路线 |
 | `GET` | `/api/data/light-rail-fares` | 轻铁车费 |
 | `GET` | `/api/data/accessibility` | 设施目录和各站设施 |
+| `GET` | `/api/mock/health` | Mock 可用性检查；需要先启用 |
 | `GET` | `/api/mock/scenarios` | 可用模拟场景；需要先启用 |
 | `GET` | `/api/mock/lines/status` | 模拟服务状态 |
 | `GET` | `/api/mock/lines/{line}/stations/{station}/next-trains` | 模拟单线到站板 |
