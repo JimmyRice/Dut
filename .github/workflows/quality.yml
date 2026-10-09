@@ -6,12 +6,16 @@
 # checked; see deny.toml. It also runs weekly, because a new advisory can be
 # published against a dependency that has not changed. The other jobs have
 # nothing new to say about unchanged code, so the weekly run skips them.
+#
+# Changes move develop -> staging -> master, and each of the three branches
+# must pass these checks. Only master builds artifacts; see docker.yml and
+# release.yml.
 
 name: Code quality
 
 on:
   push:
-    branches: [master]
+    branches: [develop, staging, master]
   pull_request:
   schedule:
     - cron: "17 3 * * 1"

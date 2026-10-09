@@ -221,7 +221,9 @@ cargo test
 cargo deny check advisories bans sources
 ```
 
-Run these at the workspace root before finishing a change. `cargo deny` needs `cargo install cargo-deny --locked`, checks dependencies for advisories, yanked releases, and unknown sources, and skips licences; the Code quality workflow runs all four checks on every push and pull request. Use `-p <crate>` for focused work. Tests are deterministic and offline: paused Tokio time for timing and wiremock with captured fixtures for upstreams. Route tests build the whole app; on macOS they raise the file-descriptor limit to accommodate parallel servers.
+Run these at the workspace root before finishing a change. `cargo deny` needs `cargo install cargo-deny --locked`, checks dependencies for advisories, yanked releases, and unknown sources, and skips licences; the Code quality workflow runs all four checks on every pull request and on every push to `develop`, `staging`, and `master`. Use `-p <crate>` for focused work. Tests are deterministic and offline: paused Tokio time for timing and wiremock with captured fixtures for upstreams. Route tests build the whole app; on macOS they raise the file-descriptor limit to accommodate parallel servers.
+
+Changes land on `develop`, are promoted to `staging`, then to `master`. All three branches run the Code quality workflow; only `master` and release tags build container images and binaries.
 
 ```text
 src/                 composition root, configuration, startup
