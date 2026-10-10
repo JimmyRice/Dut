@@ -1,0 +1,68 @@
+# Deploys to Fly.io once the Container image workflow has published a master
+# build. The deployed image is the dist build tagged with the commit,
+# sha-<short sha>, so a later push cannot change what this run deploys.
+# Fly pulls it straight from the public ghcr.io package; see fly.toml for
+# the machine and region.
+#
+# Only master builds deploy. A v* tag rebuilds the same commit, which is
+# already running. Running the workflow by hand deploys the given tag, edge
+# by default, which is how to roll back or to apply a change to fly.toml
+# alone.
+#
+# Needs the FLY_API_TOKEN secret, from `fly tokens create deploy`.
+
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [Container image]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Image tag to deploy, such as edge, 0.5.5 or sha-7f4dffe
+        default: edge
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  # Never interrupt a deploy halfway; the next one waits its turn.
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Fly.io
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      # fly.toml comes from the commit that was built, so the machine
+      # configuration and the image always match.
+      REF: ${{ github.event.workflow_run.head_sha || github.sha }}
+      DISPATCH_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.REF }}
+          persist-credentials: false
+
+      # Registry paths must be lowercase, and the repository owner may not be.
+      # docker.yml tags each image with a seven-character short sha.
+      - name: Name the image
+        run: |
+          tag="${DISPATCH_TAG:-sha-${REF::7}}"
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}:$tag" >> "$GITHUB_ENV"
+
+      - uses: superfly/flyctl-actions/setup-flyctl@fc53c09e1bc3be6f54706524e3b82c4f462f77be # v1.5
+
+      # --ha=false keeps the single machine fly.toml asks for; by default a
+      # first deploy adds a standby.
+      - name: Deploy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl deploy --image "$IMAGE" --ha=false --strategy rolling --wait-timeout 5m

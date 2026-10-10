@@ -1,0 +1,30 @@
+# Runs the published container image on Fly.io; see .github/workflows/deploy.yml.
+#
+# Fly has no Hong Kong region. Singapore is the nearest by latency, and is
+# also cheaper than Tokyo.
+#
+# One machine of the smallest size, always on: the pollers and the monitor
+# run in the background, so a machine stopped for want of requests would
+# stop watching the network.
+
+app = "dut"
+primary_region = "sin"
+
+[http_service]
+  # The image sets DUT_BIND_ADDRESS=0.0.0.0:3000.
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/api/health"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
