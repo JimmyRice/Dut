@@ -138,6 +138,7 @@ curl 'http://127.0.0.1:3000/api/mock/stations/ADM/next-trains?scenario=delayed&s
 | 參數 | 環境變數 | 預設 | 用途 |
 | --- | --- | --- | --- |
 | `--bind-address <ADDRESS>` | `DUT_BIND_ADDRESS` | `127.0.0.1:3000` | IP 同連接埠；唔接受主機名 |
+| `--max-connections <COUNT>` | `DUT_MAX_CONNECTIONS` | `1024` | 同時開住嘅連線上限；再多嘅要等接受。每條閒置連線大約佔 60 KB |
 | `--log-level <LEVEL>` | `RUST_LOG` | `info,dut=debug,tower_http=debug` | 日誌過濾規則 |
 | `--log-file <PATH>` | `DUT_LOG_FILE` | 無 | 另加一份純文字日誌，追加寫入 |
 | `--mock-api` | `DUT_MOCK_API` | 關閉 | 啟用模擬路由 |
@@ -148,7 +149,7 @@ curl 'http://127.0.0.1:3000/api/mock/stations/ADM/next-trains?scenario=delayed&s
 cargo run -- --bind-address 0.0.0.0:3000 --log-level info
 ```
 
-上游地址、逾時同快取策略都喺 [config.rs](../../src/bootstrap/config.rs) 嘅預設值。收到 `SIGTERM` 或 Ctrl-C 後，服務停止接新請求，等處理中嘅請求完成。出站 HTTP 會用環境變數或 macOS 系統代理；macOS 嘅略過清單唔會套用，要直連嘅主機請設 `NO_PROXY`。測試會直接連本機模擬上游。
+上游地址、逾時同快取策略都喺 [config.rs](../../src/bootstrap/config.rs) 嘅預設值。收到 `SIGTERM` 或 Ctrl-C 後，服務停止接新請求，等處理中嘅請求完成。一條連線 30 秒都未傳完請求標頭（包括閒置嘅 keep-alive 連線）就會被關閉，慢或者唔出聲嘅客戶端霸唔住連線。出站 HTTP 會用環境變數或 macOS 系統代理；macOS 嘅略過清單唔會套用，要直連嘅主機請設 `NO_PROXY`。測試會直接連本機模擬上游。
 
 <a id="docker"></a>
 

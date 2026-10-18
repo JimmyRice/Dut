@@ -1,7 +1,6 @@
 use std::{
     error::Error,
     future::{self, IntoFuture},
-    io,
     time::Duration,
 };
 
@@ -13,6 +12,7 @@ use dut_telemetry::millis;
 use super::{
     AppConfig, CommandLine, StartupError,
     app::{App, assemble},
+    connections::{self, HEADER_READ_TIMEOUT, Limits},
 };
 
 /// Starts logging as the command line asks, then serves until the process
@@ -32,6 +32,8 @@ pub async fn run(command_line: CommandLine) -> Result<(), StartupError> {
 async fn serve(config: AppConfig) -> Result<(), StartupError> {
     info!(
         bind_address = %config.bind_address(),
+        max_connections = config.max_connections(),
+        header_read_timeout_ms = millis(HEADER_READ_TIMEOUT),
         mock_api = config.mock_api(),
         outbound_http_timeout_ms = millis(config.outbound_http_timeout()),
         outbound_proxy = ?config.outbound_proxy(),
@@ -55,14 +57,21 @@ async fn serve(config: AppConfig) -> Result<(), StartupError> {
     tokio::spawn(connectivity.run());
 
     let (stopping, stop_requested) = oneshot::channel();
-    let serving = axum::serve(listener, router).with_graceful_shutdown(async move {
-        shutdown_requested().await;
-        // The receiver outlives the server, so this cannot fail in practice.
-        let _ = stopping.send(());
-    });
-    serve_until_stopped(serving, stop_requested, SHUTDOWN_GRACE)
-        .await
-        .map_err(StartupError::Serve)
+    let serving = connections::serve(
+        listener,
+        router,
+        Limits {
+            max_connections: config.max_connections().get(),
+            header_read_timeout: HEADER_READ_TIMEOUT,
+        },
+        async move {
+            shutdown_requested().await;
+            // The receiver outlives the server, so this cannot fail in practice.
+            let _ = stopping.send(());
+        },
+    );
+    serve_until_stopped(serving, stop_requested, SHUTDOWN_GRACE).await;
+    Ok(())
 }
 
 /// Logs where each upstream is read and how long a request to it may take,
@@ -102,25 +111,24 @@ const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 /// open connection, so one client holding an event stream would keep the
 /// process alive after Ctrl-C.
 async fn serve_until_stopped(
-    serving: impl IntoFuture<Output = io::Result<()>>,
+    serving: impl IntoFuture<Output = ()>,
     stop_requested: oneshot::Receiver<()>,
     grace: Duration,
-) -> io::Result<()> {
+) {
     let grace_over = async {
-        // A dropped sender means the server ended, which `serving` reports.
+        // A dropped sender means the server ended by itself.
         if stop_requested.await.is_err() {
             future::pending::<()>().await;
         }
         time::sleep(grace).await;
     };
     tokio::select! {
-        result = serving.into_future() => result,
+        () = serving.into_future() => {}
         () = grace_over => {
             warn!(
                 grace_ms = millis(grace),
                 "closing connections still open after the grace period"
             );
-            Ok(())
         }
     }
 }
@@ -173,13 +181,12 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_connection_that_never_ends_does_not_hold_the_process() {
         let (stopping, stop_requested) = oneshot::channel();
-        let held_open = future::pending::<io::Result<()>>();
+        let held_open = future::pending::<()>();
         let started = time::Instant::now();
         stopping.send(()).expect("the receiver is alive");
 
-        let result = serve_until_stopped(held_open, stop_requested, GRACE).await;
+        serve_until_stopped(held_open, stop_requested, GRACE).await;
 
-        assert!(result.is_ok());
         assert_eq!(started.elapsed(), GRACE);
     }
 
@@ -188,24 +195,12 @@ mod tests {
         let (stopping, stop_requested) = oneshot::channel();
         let finishing = async {
             time::sleep(Duration::from_secs(2)).await;
-            Ok(())
         };
         let started = time::Instant::now();
         stopping.send(()).expect("the receiver is alive");
 
-        let result = serve_until_stopped(finishing, stop_requested, GRACE).await;
+        serve_until_stopped(finishing, stop_requested, GRACE).await;
 
-        assert!(result.is_ok());
         assert_eq!(started.elapsed(), Duration::from_secs(2));
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn a_server_that_fails_before_any_stop_reports_its_error() {
-        let (_stopping, stop_requested) = oneshot::channel();
-        let failing = async { Err(io::Error::other("accept failed")) };
-
-        let result = serve_until_stopped(failing, stop_requested, GRACE).await;
-
-        assert!(result.is_err());
     }
 }

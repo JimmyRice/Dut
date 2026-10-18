@@ -6,6 +6,7 @@
 mod app;
 mod command_line;
 mod config;
+mod connections;
 mod error;
 mod report;
 mod server;

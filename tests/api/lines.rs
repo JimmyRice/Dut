@@ -1,5 +1,5 @@
-use crate::support::{NEXT_TRAIN_PATH, TestApp};
-use axum::http::{StatusCode, header};
+use crate::support::{NEXT_TRAIN_PATH, TestApp, assert_gzip_matches_plain};
+use axum::http::{Method, StatusCode, header};
 use serde_json::json;
 use wiremock::{Mock, ResponseTemplate, matchers::path};
 
@@ -66,4 +66,51 @@ async fn lines_describe_the_static_network() {
             { "code": "LHP", "name": { "en": "LOHAS Park", "tc": "康城" } },
         ])
     );
+}
+
+#[tokio::test]
+async fn lines_carry_an_etag_that_revalidates() {
+    let app = TestApp::start().await;
+
+    let first = app.send(Method::GET, "/api/lines").await;
+    let etag = first.header(header::ETAG).to_owned();
+    assert!(etag.starts_with("W/\""), "unexpected ETag {etag}");
+    assert_eq!(
+        app.send(Method::GET, "/api/lines")
+            .await
+            .header(header::ETAG),
+        etag
+    );
+
+    let revalidated = app
+        .send_with_headers(
+            Method::GET,
+            "/api/lines",
+            &[(header::IF_NONE_MATCH, etag.as_str())],
+        )
+        .await;
+    assert_eq!(revalidated.status, StatusCode::NOT_MODIFIED);
+    assert!(revalidated.body.is_empty());
+    assert_eq!(revalidated.header(header::ETAG), etag);
+    assert_eq!(
+        revalidated.header(header::CACHE_CONTROL),
+        "public, max-age=86400"
+    );
+
+    let outdated = app
+        .send_with_headers(
+            Method::GET,
+            "/api/lines",
+            &[(header::IF_NONE_MATCH, "W/\"0.1.0-0\"")],
+        )
+        .await;
+    assert_eq!(outdated.status, StatusCode::OK);
+    assert_eq!(outdated.body, first.body);
+}
+
+#[tokio::test]
+async fn lines_are_gzipped_for_clients_that_accept_it() {
+    let app = TestApp::start().await;
+
+    assert_gzip_matches_plain(&app, "/api/lines").await;
 }

@@ -238,7 +238,7 @@ Watch 值应短暂借用，持有它会阻止 poller 发布。`FeedHandle<Networ
 | `board(line, station).await` | `Result<BoardView, NextTrainError>` |
 | `station_boards(station).await` | `Result<StationBoards, NextTrainError>` |
 
-读取来源前先用内置路网验证，限制缓存 key。全站板并发获取并保留各线错误；没有任何线路成功时才整体失败。`BoardView` 提供 `board()`、`snapshot()`、`upcoming(direction)` 和 `directions()`，过滤已开出超过 30 秒的列车。`StationBoards` 提供 `station()`、`lines()` 和 `freshness()`；各 `LineBoard` 含 `line` 及 `board: Result<BoardView, SourceUnavailable>`。错误为 `UnknownStation(StationCode)`、`StationNotOnLine { line, station }` 或 `Unavailable(SourceUnavailable)`。
+读取来源前先用内置路网验证，限制缓存 key。全站板并发获取并保留各线错误；没有任何线路成功时才整体失败。`BoardView` 提供 `board()`、`snapshot()`、`upcoming(direction)`、`directions()` 和 `departed()`，过滤已开出超过 30 秒的列车。`departed()` 统计在 view 的时刻被隐藏的班次；同一快照的两个 view 数目相同，就呈现同一块到站板，因此由一个 view 渲染的响应可被另一个 view 重用。`StationBoards` 提供 `station()`、`lines()` 和 `freshness()`；各 `LineBoard` 含 `line` 及 `board: Result<BoardView, SourceUnavailable>`。错误为 `UnknownStation(StationCode)`、`StationNotOnLine { line, station }` 或 `Unavailable(SourceUnavailable)`。
 
 <a id="referencedataservice"></a>
 
@@ -322,7 +322,7 @@ let csv = data.files.get(SourceFile::LinesFares);
 | `localized` | `Localized<T> { en, tc }` |
 | `time` | `HONG_KONG` 固定 UTC+8；jiff Timestamp，`display_with_offset(HONG_KONG)` |
 | `line_status` | LineCondition：Normal、Delayed、Disrupted、DelayedOrDisrupted、NonServiceHours、TyphoonSignal、Unknown(String)；`display_color()`；LineStatus；`NetworkStatus::changes_since` |
-| `next_train` | NextTrainBoard `signal()`；TrainArrival 绝对时间；Platforms 为 Copy，含 `one(n)`、`pair(1, 3)`、NONE、`"1/3".parse()`、`as_slice()`；AlertNotice、NextTrainSignal、`NextTrainSignals::changes_since` |
+| `next_train` | NextTrainBoard `signal()`、`upcoming(direction, as_of)`、`directions(as_of)`、`departed(as_of)`；TrainArrival 绝对时间；Platforms 为 Copy，含 `one(n)`、`pair(1, 3)`、NONE、`"1/3".parse()`、`as_slice()`；AlertNotice、NextTrainSignal、`NextTrainSignals::changes_since` |
 | `weather` | WeatherWarning 包含 TropicalCyclone(CycloneSignal)、PreNo8Announcement、Rainstorm(RainstormLevel)、Unrecognised(String) 及其他天文台警告；ActiveWarning、`WeatherWarnings::changes_since` |
 | `source_health` | SourceId：MtrLineStatus、MtrNextTrain、HkoWarnings、MtrOpenData；HealthState：Starting、Healthy、Failing、Blind；HealthChange |
 

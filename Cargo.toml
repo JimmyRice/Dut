@@ -28,6 +28,8 @@ clap = { version = "4.6.7", default-features = false }
 csv = "1.4.0"
 flate2 = "1.1.9"
 futures = "0.3.34"
+hyper = { version = "1.11.1", default-features = false }
+hyper-util = { version = "0.1.21", default-features = false }
 jiff = "0.2.37"
 mimalloc = "0.1.52"
 nu-ansi-term = "0.50"
@@ -145,6 +147,11 @@ clap = { workspace = true, features = [
     "wrap_help",
 #    "color"
 ] }
+# The server's own accept loop, for limits `axum::serve` does not offer: a
+# header read timeout and a connection limit. Both crates already come with
+# Axum and Reqwest, so this adds no code to the build beyond the loop.
+hyper = { workspace = true, features = ["http1", "server"] }
+hyper-util = { workspace = true, features = ["server", "server-graceful", "service", "tokio"] }
 reqwest.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }

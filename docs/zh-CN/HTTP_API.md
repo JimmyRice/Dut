@@ -39,6 +39,8 @@
 
 本地 base URL 为 `http://127.0.0.1:3000`。全部路由位于 `/api` 下，使用 `GET`；健康检查也支持 `HEAD`。目前没有鉴权。JSON 响应使用 UTF-8 `application/json`；原始文件使用 `text/csv; charset=utf-8`；模拟事件流使用 `text/event-stream`。健康检查没有 body 或 content type。gzip 通过 `Accept-Encoding` 协商。Mock 路由需要通过 `--mock-api` 或 `DUT_MOCK_API` 启用。
 
+连接使用 HTTP/1.1 和 keep-alive。一条连接超过 30 秒仍未发完请求头就会被关闭；keep-alive 连接在两次请求之间空闲 30 秒也算在内，因此客户端应准备好重新连接。服务默认最多同时保持 1024 条连接（`--max-connections`）；更多的连接会在操作系统的接受队列中等待，直到有连接关闭。
+
 | 方法 | URL | 用途 |
 | --- | --- | --- |
 | `GET` | `/api/lines` | 编译内置的线路、车站、颜色及方向 |
@@ -78,7 +80,7 @@
 | `stale` | 数据已过新鲜期，在回退窗口内返回 |
 | `generated_at` / `updated_at` | 上游生成／发布时间；发布时间早不代表数据过时 |
 | `fetched_at` | Dut 最近成功获取时间 |
-| `ETag` | 数据集／文件验证值，下次放入 `If-None-Match` |
+| `ETag` | `/api/lines`、数据集和文件的验证值，下次放入 `If-None-Match` |
 | `x-request-id` | 被追踪的路由生成 UUID 或沿用客户端 header；健康检查没有 |
 
 应用错误使用下面的 JSON，`code` 稳定，`message` 为英文。错误不带 `Cache-Control`。上游细节仅记录在服务端日志中。查询错误不回显提交的代码；`not_found` 消息会包含未匹配路径。
@@ -105,6 +107,8 @@ GET /api/lines
 不读取查询参数。
 
 按内置顺序返回十条 Next Train 线路：AEL、TCL、TML、TKL、EAL、SIL、TWL、ISL、KTL、DRL。导航数据可下载一次使用，仅随部署更新。`Cache-Control: public, max-age=86400`；无业务错误。
+
+响应带弱 `ETag`，由服务版本和内容哈希组成，例如 `W/"0.5.5-eddc53094adbcfb4"`；只有内置路网或新版本改变 JSON 时才会变化。在 `If-None-Match` 中带回它，会收到空的 `304`，附带相同的 `ETag` 和 `Cache-Control`。Body 每个进程只编码一次，有纯 JSON 和最高压缩级别 gzip 两种，并附带 `Content-Length` 和 `Vary: Accept-Encoding`。
 
 ```bash
 curl http://127.0.0.1:3000/api/lines
@@ -149,6 +153,20 @@ curl http://127.0.0.1:3000/api/lines
 | `lines[].color` | string | 品牌色 `#RRGGBB` |
 | `lines[].stations` | array | 按线路顺序排列的车站引用 |
 | `lines[].directions` | array | 先 `up` 后 `down`，各含 `direction` 和车站引用数组 `towards` |
+
+使用之前响应的 `ETag` 重新验证，采集自运行中的服务：
+
+```bash
+curl -i -H 'If-None-Match: W/"0.5.5-eddc53094adbcfb4"' http://127.0.0.1:3000/api/lines
+```
+
+```http
+HTTP/1.1 304 Not Modified
+cache-control: public, max-age=86400
+etag: W/"0.5.5-eddc53094adbcfb4"
+x-request-id: 4a9e23f8-8cab-4682-b59f-f6f7640166c3
+date: Sun, 18 Oct 2026 16:05:45 GMT
+```
 
 <a id="station-reference"></a>
 
@@ -240,7 +258,7 @@ curl http://127.0.0.1:3000/api/lines/status
 }
 ```
 
-每 30 秒轮询；成功获取起算新鲜期 33 秒，`max-age` 最多为 33，随数据年龄减少。请求读取轮询结果，启动时等待首次轮询。过期值可再顶替 15 分钟，使用 `stale: true` 和 `no-cache`。无可用快照则返回 `502 upstream_unavailable`。
+每 30 秒轮询；成功获取起算新鲜期 33 秒，`max-age` 最多为 33，随数据年龄减少。请求读取轮询结果，启动时等待首次轮询。过期值可再顶替 15 分钟，使用 `stale: true` 和 `no-cache`。无可用快照则返回 `502 upstream_unavailable`。Body 每次轮询、每次 `stale` 变化时才编码一次，有纯 JSON 和最高压缩级别 gzip，并附带 `Content-Length` 和 `Vary: Accept-Encoding`；`max-age` 仍按每个请求计算。
 
 <a id="next-trains"></a>
 
@@ -372,7 +390,7 @@ curl http://127.0.0.1:3000/api/lines/TKL/stations/TKO/next-trains
 }
 ```
 
-新鲜期遵循 CDN 剩余 TTL，通常 10 秒，限制在 2–15 秒。到站板过期后等待一次合并刷新。刷新失败可在过期后 90 秒内返回旧数据，标记 `stale: true`；重试退避 5 秒。错误包括 `404 unknown_line`、`404 unknown_station`、`404 station_not_on_line`（含 `LR`）；无可用板则为 `502 upstream_unavailable`。
+新鲜期遵循 CDN 剩余 TTL，通常 10 秒，限制在 2–15 秒。到站板过期后等待一次合并刷新。刷新失败可在过期后 90 秒内返回旧数据，标记 `stale: true`；重试退避 5 秒。Body 每次获取、每次 `stale` 变化、每班车开出时才编码一次，因此始终只列出请求时刻尚未开出的班次；有纯 JSON 或最高压缩级别 gzip，并附带 `Content-Length` 和 `Vary: Accept-Encoding`；`max-age` 仍按每个请求计算。错误包括 `404 unknown_line`、`404 unknown_station`、`404 station_not_on_line`（含 `LR`）；无可用板则为 `502 upstream_unavailable`。
 
 ```bash
 curl http://127.0.0.1:3000/api/lines/TKL/stations/ADM/next-trains
@@ -486,7 +504,7 @@ curl http://127.0.0.1:3000/api/stations/ADM/next-trains
 }
 ```
 
-响应采用成功到站板中最短的剩余新鲜期。任何成功板为旧数据就使用 `no-cache`。错误：`404 unknown_station`；仅当全部线路失败时返回 `502 upstream_unavailable`。
+响应采用成功到站板中最短的剩余新鲜期。任何成功板为旧数据就使用 `no-cache`。与第 3 节相同，body 编码一次后会一直沿用，直到任一线路的到站板、旧数据状态、失败或已开出班次发生变化。错误：`404 unknown_station`；仅当全部线路失败时返回 `502 upstream_unavailable`。
 
 <a id="health"></a>
 
@@ -1545,6 +1563,7 @@ Header：`Cache-Control: no-cache`；`X-Accel-Buffering: no`，避免 nginx 扣�
 
 | 日期 | 变更 |
 | --- | --- |
+| 2026-10-19 | `GET /api/lines` 新增弱 `ETag`，`If-None-Match` 匹配时返回 `304`。`/api/lines`、线路状态和两条 Next Train 路由的每个 body 只编码一次并共享，因此现在会发送 `Content-Length`，gzip 使用最高压缩级别；解压后的 JSON 和 `Cache-Control` 不变。30 秒内未发完请求头的连接（包括空闲的 keep-alive 连接）会被关闭，默认最多同时保持 1024 条连接。 |
 | 2026-10-10 | 新增需启用的 Mock 路由 `GET /api/mock/health`：Mock API 启用时返回空 `200`，否则返回 `404 not_found`。正式契约不变。 |
 | 2026-10-08 | 新增需启用的 Mock 路由 `GET /api/mock/events`：以 Server-Sent Events 推送模拟的 `line_status` 变更，支持 `scenario`、`seed` 和 `interval`。正式契约不变。 |
 | 2026-10-07 | 文档重写为英文，新增粤语及国语版本。明确 no-cache、重启行为、健康事件及推送规划。HTTP 契约不变，保留原有样本。 |

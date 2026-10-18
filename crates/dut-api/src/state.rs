@@ -5,7 +5,11 @@ use dut_core::application::{
     reference_data::ReferenceDataService,
 };
 
-use crate::routes::data::OpenDataBodies;
+use crate::{
+    body_version::FetchVersion,
+    encoded_body::EncodedBody,
+    routes::{data::OpenDataBodies, next_train::NextTrainBodies},
+};
 
 /// Dependencies shared by every handler. Cloning is cheap: services hold
 /// their dependencies behind `Arc`.
@@ -18,6 +22,8 @@ pub struct AppState<N, L, R> {
     line_status: LineStatusService<L>,
     reference_data: ReferenceDataService<R>,
     open_data_bodies: Arc<OpenDataBodies>,
+    next_train_bodies: Arc<NextTrainBodies>,
+    line_status_body: Arc<EncodedBody<FetchVersion>>,
     mock_api: bool,
 }
 
@@ -32,6 +38,8 @@ impl<N, L, R> AppState<N, L, R> {
             line_status,
             reference_data,
             open_data_bodies: Arc::default(),
+            next_train_bodies: Arc::default(),
+            line_status_body: Arc::new(EncodedBody::new("line-status")),
             mock_api: false,
         }
     }
@@ -60,6 +68,14 @@ impl<N, L, R> AppState<N, L, R> {
         &self.open_data_bodies
     }
 
+    pub(crate) fn next_train_bodies(&self) -> &NextTrainBodies {
+        &self.next_train_bodies
+    }
+
+    pub(crate) fn line_status_body(&self) -> &EncodedBody<FetchVersion> {
+        &self.line_status_body
+    }
+
     pub(crate) const fn mock_api(&self) -> bool {
         self.mock_api
     }
@@ -73,6 +89,8 @@ impl<N, L, R> Clone for AppState<N, L, R> {
             line_status: self.line_status.clone(),
             reference_data: self.reference_data.clone(),
             open_data_bodies: Arc::clone(&self.open_data_bodies),
+            next_train_bodies: Arc::clone(&self.next_train_bodies),
+            line_status_body: Arc::clone(&self.line_status_body),
             mock_api: self.mock_api,
         }
     }
@@ -86,6 +104,8 @@ impl<N, L, R> fmt::Debug for AppState<N, L, R> {
             .field("line_status", &self.line_status)
             .field("reference_data", &self.reference_data)
             .field("open_data_bodies", &self.open_data_bodies)
+            .field("next_train_bodies", &self.next_train_bodies)
+            .field("line_status_body", &self.line_status_body)
             .field("mock_api", &self.mock_api)
             .finish()
     }

@@ -39,6 +39,8 @@ This is the client contract for Dut. Update endpoint URLs, methods, parameters, 
 
 The local base URL is `http://127.0.0.1:3000`. All routes live under `/api` and use `GET`; health also supports `HEAD`. There is no authentication. JSON responses use `application/json` with UTF-8; source files use `text/csv; charset=utf-8`; the simulated event stream uses `text/event-stream`. Health has no body or content type. gzip is negotiated through `Accept-Encoding`. Mock routes require `--mock-api` or `DUT_MOCK_API`.
 
+Connections use HTTP/1.1 with keep-alive. A connection that takes more than 30 seconds to send a request's headers is closed; that includes a kept-alive connection idle for 30 seconds between requests, so clients should be ready to reconnect. The service holds at most 1024 connections by default (`--max-connections`); further connections wait in the operating system’s accept queue until one closes.
+
 | Method | URL | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/lines` | Compiled lines, stations, colours, and directions |
@@ -78,7 +80,7 @@ The local base URL is `http://127.0.0.1:3000`. All routes live under `/api` and 
 | `stale` | The value has expired and is being served within the fallback window |
 | `generated_at` / `updated_at` | Upstream generation/publication time; an old publication time alone does not mean stale data |
 | `fetched_at` | Time of the last successful fetch by Dut |
-| `ETag` | Dataset/file validator; send it back in `If-None-Match` |
+| `ETag` | Validator on `/api/lines`, datasets, and files; send it back in `If-None-Match` |
 | `x-request-id` | Generated UUID unless a caller supplies a header; returned for traced routes, absent on health |
 
 Application errors use the JSON envelope below, with a stable `code` and an English `message`. They carry no `Cache-Control`. Upstream details stay in server logs. Lookup errors do not echo submitted codes; the `not_found` message does include the unmatched route path.
@@ -105,6 +107,8 @@ No path parameters.
 No query parameters are read.
 
 Returns the ten Next Train lines in compiled-network order: AEL, TCL, TML, TKL, EAL, SIL, TWL, ISL, KTL, DRL. Download once for navigation. Data changes only with deployment. `Cache-Control: public, max-age=86400`; no business errors.
+
+The response carries a weak `ETag` made of the service version and a hash of the content, such as `W/"0.5.5-eddc53094adbcfb4"`. It changes when the compiled network or a release changes the JSON. Send it back in `If-None-Match` to receive an empty `304` with the same `ETag` and `Cache-Control`. The body is encoded once per process, in plain JSON and maximum-level gzip, and sent with `Content-Length` and `Vary: Accept-Encoding`.
 
 ```bash
 curl http://127.0.0.1:3000/api/lines
@@ -149,6 +153,20 @@ curl http://127.0.0.1:3000/api/lines
 | `lines[].color` | string | Brand colour as `#RRGGBB` |
 | `lines[].stations` | array | Station references in line order |
 | `lines[].directions` | array | `up` then `down`, each with `direction` and station-reference array `towards` |
+
+Revalidating with the `ETag` from an earlier response, captured from the running service:
+
+```bash
+curl -i -H 'If-None-Match: W/"0.5.5-eddc53094adbcfb4"' http://127.0.0.1:3000/api/lines
+```
+
+```http
+HTTP/1.1 304 Not Modified
+cache-control: public, max-age=86400
+etag: W/"0.5.5-eddc53094adbcfb4"
+x-request-id: 4a9e23f8-8cab-4682-b59f-f6f7640166c3
+date: Sun, 18 Oct 2026 16:05:45 GMT
+```
 
 <a id="station-reference"></a>
 
@@ -240,7 +258,7 @@ Illustrative delayed-line element, not a live capture:
 }
 ```
 
-Polling is every 30 seconds; freshness lasts 33 seconds from a successful fetch, so `max-age` is at most 33 and decreases with age. Requests read the poller and wait for the first poll at startup. Expired values may be served for another 15 minutes with `stale: true` and `no-cache`. No usable snapshot yields `502 upstream_unavailable`.
+Polling is every 30 seconds; freshness lasts 33 seconds from a successful fetch, so `max-age` is at most 33 and decreases with age. Requests read the poller and wait for the first poll at startup. Expired values may be served for another 15 minutes with `stale: true` and `no-cache`. No usable snapshot yields `502 upstream_unavailable`. The body is encoded once per poll and per change of `stale`, in plain JSON and maximum-level gzip, and sent with `Content-Length` and `Vary: Accept-Encoding`; `max-age` is still worked out for each request.
 
 <a id="next-trains"></a>
 
@@ -372,7 +390,7 @@ Illustrative special-arrangement alert, not a live capture:
 }
 ```
 
-Freshness follows the CDN’s remaining TTL, normally 10 seconds and clamped to 2–15. An expired board waits for one coalesced refresh. Failed refreshes may serve data up to 90 seconds after expiry, with `stale: true`; retries back off for 5 seconds. Errors: `404 unknown_line`, `404 unknown_station`, `404 station_not_on_line` (including `LR`), or `502 upstream_unavailable` when no usable board remains.
+Freshness follows the CDN’s remaining TTL, normally 10 seconds and clamped to 2–15. An expired board waits for one coalesced refresh. Failed refreshes may serve data up to 90 seconds after expiry, with `stale: true`; retries back off for 5 seconds. The body is encoded once per fetch, per change of `stale`, and per train that departs, so it always lists the trains still to come at the time of the request. It is sent in plain JSON or maximum-level gzip, with `Content-Length` and `Vary: Accept-Encoding`; `max-age` is still worked out for each request. Errors: `404 unknown_line`, `404 unknown_station`, `404 station_not_on_line` (including `LR`), or `502 upstream_unavailable` when no usable board remains.
 
 ```bash
 curl http://127.0.0.1:3000/api/lines/TKL/stations/ADM/next-trains
@@ -486,7 +504,7 @@ Illustrative failing-line element:
 }
 ```
 
-The response takes the shortest remaining freshness of successful boards. Any stale successful board makes it `no-cache`. Errors: `404 unknown_station`; `502 upstream_unavailable` only if every line fails.
+The response takes the shortest remaining freshness of successful boards. Any stale successful board makes it `no-cache`. Like section 3, the body is encoded once until any line's board, staleness, failure, or departed trains change. Errors: `404 unknown_station`; `502 upstream_unavailable` only if every line fails.
 
 <a id="health"></a>
 
@@ -1545,6 +1563,7 @@ Stations are grouped in compiled line order. A shared code is the same interchan
 
 | Date | Change |
 | --- | --- |
+| 2026-10-19 | `GET /api/lines` gained a weak `ETag` and answers `If-None-Match` with `304`. `/api/lines`, line status, and both Next Train routes encode each body once and share it, so they now send `Content-Length` and gzip at the maximum level; decoded JSON and `Cache-Control` unchanged. Connections that send no complete headers for 30 seconds, idle kept-alive ones included, are closed, and at most 1024 connections are held by default. |
 | 2026-10-10 | Added the opt-in mock route `GET /api/mock/health`: an empty `200` when the mock API is enabled, `404 not_found` otherwise. Real contracts unchanged. |
 | 2026-10-08 | Added the opt-in mock route `GET /api/mock/events`: a Server-Sent Events stream of simulated `line_status` changes, with `scenario`, `seed`, and `interval`. Real contracts unchanged. |
 | 2026-10-07 | Documentation rewritten in English with Cantonese and Mandarin editions. Clarified no-cache, restart behaviour, health events, and planned push configuration. No HTTP contract change. Existing captures retained. |
