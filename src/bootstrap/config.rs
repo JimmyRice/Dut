@@ -1,4 +1,5 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use dut_http::ProxyMode;
@@ -9,6 +10,10 @@ use dut_upstream::CachePolicy;
 /// until its operator says so.
 pub(super) const DEFAULT_BIND_ADDRESS: SocketAddr =
     SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 3000);
+
+/// An idle kept-alive connection holds about 60 KB, so this many fit in
+/// about 60 MB, a quarter of the smallest machines the service runs on.
+pub(super) const DEFAULT_MAX_CONNECTIONS: NonZeroUsize = NonZeroUsize::new(1024).unwrap();
 
 const DEFAULT_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -80,11 +85,12 @@ const NEXT_TRAIN_CACHE: CachePolicy = CachePolicy::fresh_for(Duration::from_secs
 
 /// Settings for one server process. The default listens on localhost,
 /// reads the live upstreams, and serves no mock API; the command line can
-/// change where it listens and turn the mock API on, and tests swap the
-/// endpoints for a fake upstream.
+/// change where it listens, how many connections it holds, and turn the
+/// mock API on, and tests swap the endpoints for a fake upstream.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AppConfig {
     bind_address: SocketAddr,
+    max_connections: NonZeroUsize,
     mock_api: bool,
     outbound_http_timeout: Duration,
     outbound_proxy: ProxyMode,
@@ -177,6 +183,15 @@ impl AppConfig {
         self.bind_address
     }
 
+    pub(crate) const fn with_max_connections(mut self, limit: NonZeroUsize) -> Self {
+        self.max_connections = limit;
+        self
+    }
+
+    pub(crate) const fn max_connections(&self) -> NonZeroUsize {
+        self.max_connections
+    }
+
     pub(crate) const fn mock_api(&self) -> bool {
         self.mock_api
     }
@@ -206,6 +221,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             bind_address: DEFAULT_BIND_ADDRESS,
+            max_connections: DEFAULT_MAX_CONNECTIONS,
             mock_api: false,
             outbound_http_timeout: DEFAULT_HTTP_TIMEOUT,
             outbound_proxy: ProxyMode::System,

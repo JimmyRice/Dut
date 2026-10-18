@@ -1,11 +1,10 @@
-use std::io::Read;
-
 use axum::http::{Method, StatusCode, header};
-use flate2::read::GzDecoder;
 use serde_json::{Value, json};
 use wiremock::MockServer;
 
-use crate::support::{OPEN_DATA_FILES, TestApp, TestResponse, mount_open_data, open_data_fixture};
+use crate::support::{
+    OPEN_DATA_FILES, TestApp, TestResponse, gunzip, mount_open_data, open_data_fixture,
+};
 
 /// Open data as `OPEN_DATA_LAST_MODIFIED` dates it, in Hong Kong Time.
 const UPDATED_AT: &str = "2026-04-03T01:02:50+08:00";
@@ -363,11 +362,11 @@ async fn responses_are_gzipped_for_clients_that_accept_it() {
     assert!(gzipped.body.len() < plain.body.len() / 4);
 }
 
-/// Open data bodies are compressed ahead of time, bypassing the compression
-/// layer that encodes every other response, so they must choose a coding as
-/// it does.
+/// Bodies compressed ahead of time bypass the compression layer that
+/// encodes the other responses, such as the data index, so they must choose
+/// a coding as it does.
 #[tokio::test]
-async fn open_data_negotiates_compression_as_other_routes_do() {
+async fn precompressed_bodies_negotiate_compression_as_other_routes_do() {
     let app = app().await;
 
     for accept in [
@@ -387,10 +386,14 @@ async fn open_data_negotiates_compression_as_other_routes_do() {
     ] {
         let headers = [(header::ACCEPT_ENCODING, accept)];
         let expected = app
-            .send_with_headers(Method::GET, "/api/lines", &headers)
+            .send_with_headers(Method::GET, "/api/data", &headers)
             .await;
 
-        for path in ["/api/data/fares", "/api/data/sources/mtr_lines_fares.csv"] {
+        for path in [
+            "/api/data/fares",
+            "/api/data/sources/mtr_lines_fares.csv",
+            "/api/lines",
+        ] {
             let response = app.send_with_headers(Method::GET, path, &headers).await;
 
             assert_eq!(response.status, expected.status, "{path} for {accept}");
@@ -401,14 +404,6 @@ async fn open_data_negotiates_compression_as_other_routes_do() {
             );
         }
     }
-}
-
-fn gunzip(body: &[u8]) -> Vec<u8> {
-    let mut plain = Vec::new();
-    GzDecoder::new(body)
-        .read_to_end(&mut plain)
-        .expect("the body should be gzip");
-    plain
 }
 
 #[tokio::test]

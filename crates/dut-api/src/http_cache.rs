@@ -42,6 +42,15 @@ pub(super) fn json(cache_control: HeaderValue, body: impl Serialize) -> Response
     ([(CACHE_CONTROL, cache_control)], Json(body)).into_response()
 }
 
+/// The response `body` resolves to, such as one from an encoded body, with
+/// the given `Cache-Control` header.
+pub(super) async fn with_cache_control(
+    cache_control: HeaderValue,
+    body: impl Future<Output = Response>,
+) -> Response {
+    ([(CACHE_CONTROL, cache_control)], body.await).into_response()
+}
+
 fn no_cache() -> HeaderValue {
     HeaderValue::from_static("no-cache")
 }
@@ -52,8 +61,9 @@ fn no_cache() -> HeaderValue {
 pub(super) struct EntityTag(String);
 
 impl EntityTag {
-    /// For a cleaned dataset. The service's version is part of the tag, so
-    /// a release that changes the JSON's shape invalidates clients' copies.
+    /// For JSON this service renders, such as a cleaned dataset. The
+    /// service's version is part of the tag, so a release that changes the
+    /// JSON's shape invalidates clients' copies.
     pub(super) fn dataset(revision: Revision) -> Self {
         Self(format!("{}-{revision}", env!("CARGO_PKG_VERSION")))
     }

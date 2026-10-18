@@ -1,13 +1,16 @@
 //! The options the process is started with, from its arguments or
 //! environment.
 
-use std::{net::SocketAddr, path::PathBuf};
+use std::{net::SocketAddr, num::NonZeroUsize, path::PathBuf};
 
 use clap::{Args, Parser, builder::BoolishValueParser};
 
 use dut_telemetry::{LogConfig, LogFilter};
 
-use super::{AppConfig, config::DEFAULT_BIND_ADDRESS};
+use super::{
+    AppConfig,
+    config::{DEFAULT_BIND_ADDRESS, DEFAULT_MAX_CONNECTIONS},
+};
 
 /// What may differ between two runs of the same build: where the process
 /// listens, how it logs, and, as features need them, credentials. What the
@@ -45,6 +48,17 @@ struct ServerOptions {
         default_value_t = DEFAULT_BIND_ADDRESS
     )]
     bind_address: SocketAddr,
+
+    /// Most connections to hold open at once. Further clients wait to be
+    /// accepted until one closes, which bounds memory: each idle connection
+    /// holds about 60 KB
+    #[arg(
+        long,
+        env = "DUT_MAX_CONNECTIONS",
+        value_name = "COUNT",
+        default_value_t = DEFAULT_MAX_CONNECTIONS
+    )]
+    max_connections: NonZeroUsize,
 }
 
 #[derive(Debug, Args)]
@@ -103,6 +117,7 @@ impl CommandLine {
     pub fn app_config(&self) -> AppConfig {
         AppConfig::default()
             .with_bind_address(self.server.bind_address)
+            .with_max_connections(self.server.max_connections)
             .with_mock_api(self.development.mock_api)
     }
 }
@@ -146,6 +161,8 @@ mod tests {
         let command_line = parse(&[
             "--bind-address",
             "0.0.0.0:8080",
+            "--max-connections",
+            "64",
             "--log-level",
             "warn,dut=info",
             "--log-file",
@@ -158,6 +175,7 @@ mod tests {
             command_line.app_config(),
             AppConfig::default()
                 .with_bind_address(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 8080)))
+                .with_max_connections(NonZeroUsize::new(64).unwrap())
                 .with_mock_api(true)
         );
         assert_eq!(
@@ -201,6 +219,19 @@ mod tests {
     }
 
     #[test]
+    fn rejects_a_connection_limit_that_admits_nobody() {
+        for value in ["0", "many", "1.5", ""] {
+            let result = parse(&["--max-connections", value]);
+
+            assert_eq!(
+                result.map_err(|error| error.kind()).err(),
+                Some(ErrorKind::ValueValidation),
+                "{value:?} should be rejected"
+            );
+        }
+    }
+
+    #[test]
     fn rejects_a_mistyped_log_level() {
         let result = parse(&["--log-level", "debgu"]);
 
@@ -224,6 +255,7 @@ mod tests {
             variables,
             [
                 ("bind_address", Some(OsStr::new("DUT_BIND_ADDRESS"))),
+                ("max_connections", Some(OsStr::new("DUT_MAX_CONNECTIONS"))),
                 ("log_level", Some(OsStr::new("RUST_LOG"))),
                 ("log_file", Some(OsStr::new("DUT_LOG_FILE"))),
                 ("mock_api", Some(OsStr::new("DUT_MOCK_API"))),

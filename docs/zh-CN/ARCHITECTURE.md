@@ -89,6 +89,8 @@ Next Train 使用 `dut-upstream` 私有的泛型 `RefreshingCache<K, V>`。Key �
 
 到站板先获取英文，站名来自内置路网；仅为特别安排通告额外获取繁体中文。所有出站请求均通过共享 `OutboundHttpClient::fetch`，以结构化日志记录开始、完成和失败。缓存日志覆盖 miss、过期、刷新、合并等待、旧数据回退、后台重新验证及退避。
 
+许多客户端共用的响应只编码一次并重用。`dut-api` 的 `EncodedBody<V>` 为最近被请求的版本保存一个 body 的纯文本和最高压缩级别 gzip 字节，每种编码在首次被请求时于 blocking pool 中生成；`EncodedBodies<K, V>` 为每个已验证的 key（例如线路和车站）各保存一个。版本包含字节依赖的全部内容：`FetchVersion` 是快照的 `fetched_at` 和 `stale`，`BoardVersion` 再加上 `BoardView::departed()`，因为缓存的到站板会按每个请求的时刻隐藏已开出班次。`/api/lines` 只有一个固定 body。`max-age` 这类按请求计算的响应头不放入缓存字节。
+
 <a id="polled-feeds"></a>
 
 ### 轮询 Feed
@@ -157,3 +159,5 @@ Next Train 监控每分钟抽查每条线一个中段车站，通过乘客共用
 ## 部署方向
 
 当前服务是一个程序，通过进程内 channel 连接。多个实例各自重建缓存并轮询，上游负载随实例数增加，监控也会重复发布事件。扩展前需要增加配置，把 monitor 和 push 限定在一个角色，并使用幂等机制处理替换重叠。存在跨进程消费者时才把事件移到 Redis 或 NATS；可序列化事件 DTO 放在 `dut-core` 之外。
+
+服务使用自己在 Hyper 上编写的 accept 循环，而不是 `axum::serve`，以提供两个让小机器在高负载下仍能响应的限制：30 秒请求头读取超时（空闲的 keep-alive 连接同样会被关闭），以及同时保持的连接上限（`--max-connections`，默认 1024；每条空闲连接约 60 KB）。达到上限时，新连接在内核的 accept 队列中等待，因此内存有上界，已接受的请求依然快速。在 Fly.io 上，代理自身的并发上限按请求计算并低于该上限，因此多出的流量会先在代理处排队。

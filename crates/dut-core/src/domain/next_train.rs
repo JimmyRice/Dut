@@ -166,6 +166,20 @@ impl NextTrainBoard {
             .filter(move |train| !train.has_departed(as_of))
     }
 
+    /// How many trains, in every direction, have departed as of `as_of`.
+    ///
+    /// A departed train never comes back, and trains depart in order of
+    /// their arrival times, so two instants with the same count show the
+    /// same trains and directions: a board presented once stays correct
+    /// until this count changes.
+    pub fn departed(&self, as_of: Timestamp) -> usize {
+        Direction::ALL
+            .into_iter()
+            .flat_map(|direction| self.trains.get(direction))
+            .filter(|train| train.has_departed(as_of))
+            .count()
+    }
+
     /// Directions a rider can board in at this station as of `as_of`.
     ///
     /// A direction is shown while it leads to a terminus beyond the station,
@@ -325,6 +339,24 @@ mod tests {
             .collect();
 
         assert_eq!(upcoming, [2]);
+    }
+
+    #[test]
+    fn departed_counts_trains_past_their_grace_period_in_every_direction() {
+        let board = board(
+            station!("TKO"),
+            ByDirection::new(
+                vec![train(1, timestamp(100)), train(2, timestamp(400))],
+                vec![train(1, timestamp(200))],
+            ),
+        );
+        let after_grace =
+            |seconds| timestamp(seconds) + DEPARTED_GRACE + SignedDuration::from_secs(1);
+
+        assert_eq!(board.departed(timestamp(0)), 0);
+        assert_eq!(board.departed(after_grace(100)), 1);
+        assert_eq!(board.departed(after_grace(200)), 2);
+        assert_eq!(board.departed(after_grace(400)), 3);
     }
 
     #[test]

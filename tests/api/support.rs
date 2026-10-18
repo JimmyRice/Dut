@@ -1,6 +1,6 @@
 //! Shared helpers for route-level tests.
 
-use std::{sync::Once, time::Duration};
+use std::{io::Read, sync::Once, time::Duration};
 
 use axum::{
     Router,
@@ -8,6 +8,7 @@ use axum::{
     http::{HeaderMap, HeaderName, Method, Request, StatusCode, header},
 };
 use dut::{AppConfig, build_app};
+use flate2::read::GzDecoder;
 use futures::StreamExt;
 use jiff::{Timestamp, tz};
 use serde_json::{Map, Value, json};
@@ -418,4 +419,40 @@ pub(crate) async fn mount_open_data(upstream: &MockServer, failing: Option<&str>
             .mount(upstream)
             .await;
     }
+}
+
+/// Decompresses a gzipped response body.
+pub(crate) fn gunzip(body: &[u8]) -> Vec<u8> {
+    let mut plain = Vec::new();
+    GzDecoder::new(body)
+        .read_to_end(&mut plain)
+        .expect("the body should be gzip");
+    plain
+}
+
+/// Asserts that `uri` answers gzip to a client that accepts it, saying it
+/// varies on `Accept-Encoding` and carries a `Cache-Control` header, and
+/// that the gzipped body matches the plain response's.
+pub(crate) async fn assert_gzip_matches_plain(app: &TestApp, uri: &str) {
+    let plain = app.send(Method::GET, uri).await;
+    let gzipped = app
+        .send_with_headers(Method::GET, uri, &[(header::ACCEPT_ENCODING, "gzip")])
+        .await;
+
+    assert_eq!(plain.status, StatusCode::OK, "{uri}");
+    assert_eq!(gzipped.status, StatusCode::OK, "{uri}");
+    assert_eq!(plain.header(header::CONTENT_ENCODING), "", "{uri}");
+    assert_eq!(gzipped.header(header::CONTENT_ENCODING), "gzip", "{uri}");
+    for response in [&plain, &gzipped] {
+        assert_eq!(
+            response.header(header::CONTENT_TYPE),
+            "application/json",
+            "{uri}"
+        );
+        assert_eq!(response.header(header::VARY), "accept-encoding", "{uri}");
+    }
+    // A max-age counts down between the two requests, so only its presence
+    // is compared.
+    assert!(!gzipped.header(header::CACHE_CONTROL).is_empty(), "{uri}");
+    assert_eq!(gunzip(&gzipped.body), plain.body, "{uri}");
 }
