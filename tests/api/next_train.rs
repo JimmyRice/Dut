@@ -1,4 +1,6 @@
-use crate::support::{Moment, NEXT_TRAIN_PATH, TestApp, Train, schedule_body};
+use crate::support::{
+    Moment, NEXT_TRAIN_PATH, TestApp, Train, assert_gzip_matches_plain, schedule_body,
+};
 use axum::http::{StatusCode, header};
 use serde_json::{Value, json};
 use wiremock::{
@@ -261,6 +263,27 @@ async fn line_board_is_served_from_cache_on_repeat_requests() {
     first.assert_json(StatusCode::OK);
     second.assert_json(StatusCode::OK);
     assert_eq!(first.body["directions"], second.body["directions"]);
+}
+
+#[tokio::test]
+async fn boards_are_gzipped_for_clients_that_accept_it() {
+    let app = TestApp::start().await;
+    let now = Moment::now();
+    let body = schedule_body(
+        "TKL",
+        "POA",
+        now,
+        &[],
+        &[Train {
+            dest: "NOP",
+            at: now.plus_seconds(120),
+        }],
+    );
+    // Both routes and both codings are answered from one upstream call.
+    mount_board(&app, "TKL", "POA", upstream_ok(body)).await;
+
+    assert_gzip_matches_plain(&app, "/api/lines/TKL/stations/POA/next-trains").await;
+    assert_gzip_matches_plain(&app, "/api/stations/POA/next-trains").await;
 }
 
 #[tokio::test]

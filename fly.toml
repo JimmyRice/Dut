@@ -10,6 +10,13 @@
 app = "dut"
 primary_region = "sin"
 
+[env]
+  # One line per request plus every cache refresh, failure, and stale
+  # fallback. The default adds a debug line for each request's start and
+  # each cache hit, which costs about a tenth of the throughput; set
+  # `info,dut=debug,tower_http=debug` here to see them again.
+  RUST_LOG = "info"
+
 [http_service]
   # The image sets DUT_BIND_ADDRESS=0.0.0.0:3000.
   internal_port = 3000
@@ -17,6 +24,15 @@ primary_region = "sin"
   auto_stop_machines = "off"
   auto_start_machines = true
   min_machines_running = 1
+
+  # Counted in requests rather than connections, so the proxy pools and
+  # reuses connections to the machine. The hard limit stays below the
+  # service's own limit of 1024 connections (DUT_MAX_CONNECTIONS), so the
+  # proxy queues the excess rather than the machine's accept queue.
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 800
+    hard_limit = 1000
 
   [[http_service.checks]]
     method = "GET"

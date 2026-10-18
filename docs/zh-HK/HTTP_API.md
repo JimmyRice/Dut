@@ -39,6 +39,8 @@
 
 本機 base URL 係 `http://127.0.0.1:3000`。全部路由喺 `/api` 下，用 `GET`；健康檢查亦支援 `HEAD`。目前冇鑑權。JSON 回應用 UTF-8 `application/json`；原始檔用 `text/csv; charset=utf-8`；模擬事件流用 `text/event-stream`。健康檢查冇 body 或 content type。gzip 由 `Accept-Encoding` 協商。Mock 路由要用 `--mock-api` 或 `DUT_MOCK_API` 啟用。
 
+連線用 HTTP/1.1 同 keep-alive。一條連線超過 30 秒都未傳完請求標頭就會被關閉；keep-alive 連線喺兩個請求之間閒置 30 秒都算，所以客戶端要準備好重新連線。服務預設最多同時開 1024 條連線（`--max-connections`）；再多嘅連線會喺作業系統嘅接受佇列度等，直到有連線關閉。
+
 | 方法 | URL | 用途 |
 | --- | --- | --- |
 | `GET` | `/api/lines` | 編譯內置嘅路綫、車站、顏色同行車方向 |
@@ -78,7 +80,7 @@
 | `stale` | 資料已過新鮮期，喺頂替視窗內回傳 |
 | `generated_at` / `updated_at` | 上游產生／發佈時間；發佈得早唔代表資料過時 |
 | `fetched_at` | Dut 最近成功抓取時間 |
-| `ETag` | 數據集／檔案驗證值，下次放入 `If-None-Match` |
+| `ETag` | `/api/lines`、數據集同檔案嘅驗證值，下次放入 `If-None-Match` |
 | `x-request-id` | 有追蹤嘅路由會產生 UUID 或沿用客戶端 header；健康檢查冇 |
 
 應用錯誤用下面嘅 JSON，`code` 穩定，`message` 係英文。錯誤冇 `Cache-Control`。上游細節只喺伺服器日誌。查找錯誤唔會照抄提交嘅代碼；`not_found` 訊息就會包含未匹配路徑。
@@ -105,6 +107,8 @@ GET /api/lines
 唔讀取查詢參數。
 
 按內置順序回傳十條 Next Train 路綫：AEL、TCL、TML、TKL、EAL、SIL、TWL、ISL、KTL、DRL。導航資料下載一次就用得，隨部署先改。`Cache-Control: public, max-age=86400`；冇業務錯誤。
+
+回應帶弱 `ETag`，由服務版本同內容雜湊組成，例如 `W/"0.5.5-eddc53094adbcfb4"`；內置路網或者新版本改咗 JSON 先會變。喺 `If-None-Match` 帶返佢，就會收到空嘅 `304`，附同一個 `ETag` 同 `Cache-Control`。Body 每個程序只編碼一次，有純 JSON 同最高壓縮級別 gzip 兩種，連 `Content-Length` 同 `Vary: Accept-Encoding` 一齊傳。
 
 ```bash
 curl http://127.0.0.1:3000/api/lines
@@ -149,6 +153,20 @@ curl http://127.0.0.1:3000/api/lines
 | `lines[].color` | string | 品牌色 `#RRGGBB` |
 | `lines[].stations` | array | 按路綫順序排列嘅車站引用 |
 | `lines[].directions` | array | 先 `up` 後 `down`，各有 `direction` 同車站引用陣列 `towards` |
+
+用之前回應嘅 `ETag` 重新驗證，擷取自運行中嘅服務：
+
+```bash
+curl -i -H 'If-None-Match: W/"0.5.5-eddc53094adbcfb4"' http://127.0.0.1:3000/api/lines
+```
+
+```http
+HTTP/1.1 304 Not Modified
+cache-control: public, max-age=86400
+etag: W/"0.5.5-eddc53094adbcfb4"
+x-request-id: 4a9e23f8-8cab-4682-b59f-f6f7640166c3
+date: Sun, 18 Oct 2026 16:05:45 GMT
+```
 
 <a id="station-reference"></a>
 
@@ -240,7 +258,7 @@ curl http://127.0.0.1:3000/api/lines/status
 }
 ```
 
-每 30 秒輪詢；成功抓取起計新鮮期 33 秒，`max-age` 最多 33，隨資料年齡減少。請求讀輪詢結果，啟動時等首次輪詢。過期值可以再頂替 15 分鐘，用 `stale: true` 同 `no-cache`。冇可用快照就 `502 upstream_unavailable`。
+每 30 秒輪詢；成功抓取起計新鮮期 33 秒，`max-age` 最多 33，隨資料年齡減少。請求讀輪詢結果，啟動時等首次輪詢。過期值可以再頂替 15 分鐘，用 `stale: true` 同 `no-cache`。冇可用快照就 `502 upstream_unavailable`。Body 每次輪詢、每次 `stale` 改變先編碼一次，有純 JSON 同最高壓縮級別 gzip，連 `Content-Length` 同 `Vary: Accept-Encoding` 一齊傳；`max-age` 仍然逐個請求計。
 
 <a id="next-trains"></a>
 
@@ -372,7 +390,7 @@ curl http://127.0.0.1:3000/api/lines/TKL/stations/TKO/next-trains
 }
 ```
 
-新鮮期跟 CDN 剩餘 TTL，通常 10 秒，限制喺 2–15。到站板過期會等一次合併刷新。刷新失敗可以喺過期後 90 秒內回傳舊資料，標記 `stale: true`；重試退避 5 秒。錯誤有 `404 unknown_line`、`404 unknown_station`、`404 station_not_on_line`（包括 `LR`）；冇可用板就 `502 upstream_unavailable`。
+新鮮期跟 CDN 剩餘 TTL，通常 10 秒，限制喺 2–15。到站板過期會等一次合併刷新。刷新失敗可以喺過期後 90 秒內回傳舊資料，標記 `stale: true`；重試退避 5 秒。Body 每次抓取、每次 `stale` 改變、每班車開出先編碼一次，所以永遠只列請求嗰刻仲未開嘅班次；有純 JSON 或最高壓縮級別 gzip，連 `Content-Length` 同 `Vary: Accept-Encoding` 一齊傳；`max-age` 仍然逐個請求計。錯誤有 `404 unknown_line`、`404 unknown_station`、`404 station_not_on_line`（包括 `LR`）；冇可用板就 `502 upstream_unavailable`。
 
 ```bash
 curl http://127.0.0.1:3000/api/lines/TKL/stations/ADM/next-trains
@@ -486,7 +504,7 @@ curl http://127.0.0.1:3000/api/stations/ADM/next-trains
 }
 ```
 
-回應用成功到站板最短剩餘新鮮期。任何成功板係舊資料就用 `no-cache`。錯誤：`404 unknown_station`；全部路綫失敗先 `502 upstream_unavailable`。
+回應用成功到站板最短剩餘新鮮期。任何成功板係舊資料就用 `no-cache`。同第 3 節一樣，body 編碼一次之後會一直沿用，直到任何一條路綫嘅到站板、舊資料狀態、失敗或者已開出班次有變。錯誤：`404 unknown_station`；全部路綫失敗先 `502 upstream_unavailable`。
 
 <a id="health"></a>
 
@@ -1545,6 +1563,7 @@ Header：`Cache-Control: no-cache`；`X-Accel-Buffering: no`，等 nginx 唔會�
 
 | 日期 | 改動 |
 | --- | --- |
+| 2026-10-19 | `GET /api/lines` 新增弱 `ETag`，`If-None-Match` 吻合就回 `304`。`/api/lines`、路綫狀態同兩條 Next Train 路由每個 body 只編碼一次再共用，所以而家會傳 `Content-Length`，gzip 用最高壓縮級別；解壓後嘅 JSON 同 `Cache-Control` 不變。30 秒內未傳完標頭嘅連線（包括閒置嘅 keep-alive 連線）會被關閉，預設最多同時開 1024 條連線。 |
 | 2026-10-10 | 新增要啟用嘅 Mock 路由 `GET /api/mock/health`：Mock API 啟用時回空 `200`，否則回 `404 not_found`。正式合約不變。 |
 | 2026-10-08 | 新增要啟用嘅 Mock 路由 `GET /api/mock/events`：用 Server-Sent Events 推送模擬嘅 `line_status` 變更，支援 `scenario`、`seed` 同 `interval`。正式合約不變。 |
 | 2026-10-07 | 文件重寫為英文，新增粵語同國語版本。釐清 no-cache、重啟行為、健康事件同推送規劃。HTTP 合約冇改，保留原有樣本。 |

@@ -2,7 +2,7 @@ use std::{io, net::SocketAddr};
 
 use thiserror::Error;
 
-/// Why the process could not start, or stopped serving. Only `main` sees it,
+/// Why the process could not start. Only `main` sees it,
 /// so unlike API errors it may name addresses, files, and upstream URLs.
 ///
 /// Like every error in the workspace, a message leaves out its cause, which
@@ -37,7 +37,4 @@ pub enum StartupError {
 
     #[error("failed to read the HTTP server's local address")]
     LocalAddress(#[source] io::Error),
-
-    #[error("the HTTP server stopped with an error")]
-    Serve(#[source] io::Error),
 }

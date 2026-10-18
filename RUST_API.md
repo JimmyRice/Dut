@@ -238,7 +238,7 @@ Borrow a watch value briefly; holding it prevents the poller from publishing. `F
 | `board(line, station).await` | `Result<BoardView, NextTrainError>` |
 | `station_boards(station).await` | `Result<StationBoards, NextTrainError>` |
 
-Validation uses the compiled network before reading a source, bounding cache keys. Station boards fetch concurrently and keep per-line failures; the call fails only if no line succeeds. `BoardView` exposes `board()`, `snapshot()`, `upcoming(direction)`, and `directions()`, filtering departures more than 30 seconds old. `StationBoards` exposes `station()`, `lines()`, and `freshness()`; each `LineBoard` has `line` and `board: Result<BoardView, SourceUnavailable>`. Errors are `UnknownStation(StationCode)`, `StationNotOnLine { line, station }`, or `Unavailable(SourceUnavailable)`.
+Validation uses the compiled network before reading a source, bounding cache keys. Station boards fetch concurrently and keep per-line failures; the call fails only if no line succeeds. `BoardView` exposes `board()`, `snapshot()`, `upcoming(direction)`, `directions()`, and `departed()`, filtering departures more than 30 seconds old. `departed()` counts the trains hidden at the view's instant; two views of one snapshot with the same count present the same board, so a response rendered from one can be reused for the other. `StationBoards` exposes `station()`, `lines()`, and `freshness()`; each `LineBoard` has `line` and `board: Result<BoardView, SourceUnavailable>`. Errors are `UnknownStation(StationCode)`, `StationNotOnLine { line, station }`, or `Unavailable(SourceUnavailable)`.
 
 <a id="referencedataservice"></a>
 
@@ -322,7 +322,7 @@ A syntactically valid station code can still be unknown. Check `Station::find` o
 | `localized` | `Localized<T> { en, tc }` |
 | `time` | `HONG_KONG` fixed UTC+8; jiff Timestamp, `display_with_offset(HONG_KONG)` |
 | `line_status` | LineCondition: Normal, Delayed, Disrupted, DelayedOrDisrupted, NonServiceHours, TyphoonSignal, Unknown(String); `display_color()`; LineStatus; `NetworkStatus::changes_since` |
-| `next_train` | NextTrainBoard `signal()`; TrainArrival absolute times; Platforms is Copy with `one(n)`, `pair(1, 3)`, NONE, `"1/3".parse()`, `as_slice()`; AlertNotice; NextTrainSignal; `NextTrainSignals::changes_since` |
+| `next_train` | NextTrainBoard `signal()`, `upcoming(direction, as_of)`, `directions(as_of)`, `departed(as_of)`; TrainArrival absolute times; Platforms is Copy with `one(n)`, `pair(1, 3)`, NONE, `"1/3".parse()`, `as_slice()`; AlertNotice; NextTrainSignal; `NextTrainSignals::changes_since` |
 | `weather` | WeatherWarning includes TropicalCyclone(CycloneSignal), PreNo8Announcement, Rainstorm(RainstormLevel), Unrecognised(String), and other HKO warnings; ActiveWarning; `WeatherWarnings::changes_since` |
 | `source_health` | SourceId: MtrLineStatus, MtrNextTrain, HkoWarnings, MtrOpenData; HealthState: Starting, Healthy, Failing, Blind; HealthChange |
 

@@ -7,8 +7,10 @@
 //! sent; handing out the same encoded bytes costs neither.
 
 use std::{
+    collections::HashMap,
     error::Error,
     fmt,
+    hash::Hash,
     io::{self, Write},
     sync::{Arc, Mutex, MutexGuard, PoisonError},
     time::Instant,
@@ -20,6 +22,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use flate2::{Compression, write::GzEncoder};
+use serde::Serialize;
 use thiserror::Error;
 use tokio::{
     sync::OnceCell,
@@ -30,6 +33,14 @@ use tracing::{debug, error};
 use dut_telemetry::millis;
 
 use crate::content_coding::ContentCoding;
+
+/// The content type of every JSON body.
+pub(crate) const JSON: HeaderValue = HeaderValue::from_static("application/json");
+
+/// Renders `body` as JSON, for [`EncodedBody::respond`].
+pub(crate) fn render_json(body: &impl Serialize) -> Result<Bytes, serde_json::Error> {
+    serde_json::to_vec(body).map(Bytes::from)
+}
 
 /// One response body in each content coding, for the version last asked
 /// for.
@@ -65,14 +76,16 @@ pub(crate) enum EncodeError {
     Task(#[from] JoinError),
 }
 
-impl<V: Copy + PartialEq + fmt::Debug> EncodedBody<V> {
+impl<V> EncodedBody<V> {
     pub(crate) const fn new(name: &'static str) -> Self {
         Self {
             name,
             current: Mutex::new(None),
         }
     }
+}
 
+impl<V: PartialEq + fmt::Debug> EncodedBody<V> {
     /// A `200` response with the body of `version` in the coding the
     /// request accepts.
     ///
@@ -136,7 +149,7 @@ impl<V: Copy + PartialEq + fmt::Debug> EncodedBody<V> {
 
         debug!(
             body = self.name,
-            ?version,
+            version = ?encodings.version,
             replaced = previous.is_some(),
             "new response body version"
         );
@@ -193,6 +206,46 @@ impl<V> fmt::Debug for EncodedBody<V> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("EncodedBody")
+            .field("name", &self.name)
+            .finish_non_exhaustive()
+    }
+}
+
+/// One [`EncodedBody`] per key, created when a key is first asked for.
+///
+/// A body is kept for every key ever asked for, so keys must come from a
+/// bounded set, such as the lines and stations of the static network.
+pub(crate) struct EncodedBodies<K, V> {
+    /// Names every body in logs.
+    name: &'static str,
+    bodies: Mutex<HashMap<K, Arc<EncodedBody<V>>>>,
+}
+
+impl<K: Eq + Hash, V> EncodedBodies<K, V> {
+    pub(crate) fn new(name: &'static str) -> Self {
+        Self {
+            name,
+            bodies: Mutex::default(),
+        }
+    }
+
+    /// The body for `key`, shared with every other request for it.
+    pub(crate) fn get(&self, key: K) -> Arc<EncodedBody<V>> {
+        // As for `EncodedBody`, no code panics while holding this lock.
+        let mut bodies = self.bodies.lock().unwrap_or_else(PoisonError::into_inner);
+        Arc::clone(
+            bodies
+                .entry(key)
+                .or_insert_with(|| Arc::new(EncodedBody::new(self.name))),
+        )
+    }
+}
+
+// Implemented by hand so that it does not require `K: Debug` or the lock.
+impl<K, V> fmt::Debug for EncodedBodies<K, V> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("EncodedBodies")
             .field("name", &self.name)
             .finish_non_exhaustive()
     }
@@ -313,6 +366,14 @@ mod tests {
         assert_eq!(counted.renders(), 1);
         assert_eq!(first, second);
         assert_eq!(second, third);
+    }
+
+    #[test]
+    fn each_key_shares_one_body() {
+        let bodies = EncodedBodies::<u8, u32>::new("test");
+
+        assert!(Arc::ptr_eq(&bodies.get(1), &bodies.get(1)));
+        assert!(!Arc::ptr_eq(&bodies.get(1), &bodies.get(2)));
     }
 
     #[tokio::test]

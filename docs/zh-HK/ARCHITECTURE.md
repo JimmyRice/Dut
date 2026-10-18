@@ -89,6 +89,8 @@ Next Train 用 `dut-upstream` 私有嘅泛型 `RefreshingCache<K, V>`。Key 係�
 
 到站板先取英文，站名用內置路網；只有特別安排通告先額外取繁體中文。所有出站請求都經共用 `OutboundHttpClient::fetch`，用結構化日誌記開始、完成同失敗。快取日誌涵蓋 miss、過期、刷新、合併等候、舊資料頂替、背景重新驗證同退避。
 
+好多客戶端共用嘅回應只編碼一次再重用。`dut-api` 嘅 `EncodedBody<V>` 為最近被請求嘅版本保存一個 body 嘅純文字同最高壓縮級別 gzip 位元組，每種編碼喺第一次被請求時喺 blocking pool 整；`EncodedBodies<K, V>` 為每個已驗證嘅 key（例如路綫同車站）各保存一個。版本包含位元組依賴嘅全部嘢：`FetchVersion` 係快照嘅 `fetched_at` 同 `stale`，`BoardVersion` 再加 `BoardView::departed()`，因為快取嘅到站板會按每個請求嗰刻隱藏已開出班次。`/api/lines` 得一個固定 body。`max-age` 呢類逐個請求計嘅標頭唔會放入快取位元組。
+
 <a id="polled-feeds"></a>
 
 ### 輪詢 Feed
@@ -157,3 +159,5 @@ Next Train 監控每分鐘抽查每條綫一個中段車站，經乘客共用嘅
 ## 部署方向
 
 目前服務係一個程式，用進程內 channel 連接。多個實例各自重建快取同輪詢，上游負載隨實例數增加，監控亦會重複發事件。擴展之前，要加設定將 monitor 同 push 限定喺一個角色，並用冪等機制處理替換重疊。有跨進程消費者先將事件搬去 Redis 或 NATS；可序列化事件 DTO 要放喺 `dut-core` 以外。
+
+服務用自己喺 Hyper 上面寫嘅 accept 迴圈，唔用 `axum::serve`，為咗兩個令細機喺高負載下都答得到嘅限制：30 秒標頭讀取逾時（閒置嘅 keep-alive 連線一樣會被關），同埋同時開住連線嘅上限（`--max-connections`，預設 1024；每條閒置連線大約 60 KB）。到咗上限，新連線會喺核心嘅 accept 佇列等，所以記憶體有上限，已接受嘅請求依然快。喺 Fly.io，proxy 自己嘅並發上限按請求計，而且低過呢個上限，所以多出嚟嘅流量會先喺 proxy 排隊。

@@ -5,7 +5,10 @@ use dut_core::domain::network::{Direction, Line, StationCode};
 use crate::dto::common::{DirectionCode, LineRef, StationRef};
 
 /// `GET /api/lines`: the lines covered by Next Train, with their stations.
-#[derive(Debug, Serialize)]
+///
+/// It hashes its content, so that the response's `ETag` changes exactly
+/// when the network compiled into the service does.
+#[derive(Debug, Hash, Serialize)]
 pub(crate) struct LinesResponse {
     pub lines: Vec<LineDetail>,
 }
@@ -19,7 +22,7 @@ impl LinesResponse {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Hash, Serialize)]
 pub(crate) struct LineDetail {
     #[serde(flatten)]
     pub line: LineRef,
@@ -32,7 +35,7 @@ pub(crate) struct LineDetail {
 }
 
 /// One running direction of a line and the termini it heads towards.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Hash, Serialize)]
 pub(crate) struct LineDirection {
     pub direction: DirectionCode,
     pub towards: Vec<StationRef<'static>>,
