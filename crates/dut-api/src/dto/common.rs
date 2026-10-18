@@ -16,7 +16,7 @@ use dut_core::{
     },
 };
 
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Hash, Serialize)]
 pub(crate) struct LocalizedText<'a> {
     pub en: &'a str,
     pub tc: &'a str,
@@ -41,7 +41,7 @@ impl<'a> From<&'a Localized<String>> for LocalizedText<'a> {
 }
 
 /// A line identified by code, with its display name.
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Hash, Serialize)]
 pub(crate) struct LineRef {
     pub code: &'static str,
     pub name: LocalizedText<'static>,
@@ -58,7 +58,7 @@ impl From<Line> for LineRef {
 
 /// A station identified by code, with its display name when the station is
 /// known to this service.
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Hash, Serialize)]
 pub(crate) struct StationRef<'a> {
     pub code: &'a str,
     pub name: Option<LocalizedText<'static>>,
@@ -77,7 +77,7 @@ impl<'a> From<&'a StationCode> for StationRef<'a> {
 ///
 /// The identifiers match the MTR's so clients can remember a rider's usual
 /// direction; the accompanying `towards` is what riders should be shown.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Hash)]
 pub(crate) struct DirectionCode(pub Direction);
 
 impl Serialize for DirectionCode {

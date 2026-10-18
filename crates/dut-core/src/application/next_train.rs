@@ -65,6 +65,13 @@ impl BoardView {
         self.board().upcoming(direction, self.as_of)
     }
 
+    /// How many of the board's trains are hidden as departed at this
+    /// instant; see [`NextTrainBoard::departed`]. Views of one snapshot
+    /// with the same count present exactly the same board.
+    pub fn departed(&self) -> usize {
+        self.board().departed(self.as_of)
+    }
+
     /// Directions a rider can board in at this instant; see
     /// [`NextTrainBoard::directions`].
     pub fn directions(&self) -> impl Iterator<Item = Direction> + '_ {

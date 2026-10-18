@@ -1,4 +1,4 @@
-use crate::support::{LINE_STATUS_PATH, TestApp, line_status_fixture};
+use crate::support::{LINE_STATUS_PATH, TestApp, assert_gzip_matches_plain, line_status_fixture};
 use axum::http::StatusCode;
 use serde_json::{Value, json};
 use wiremock::{
@@ -58,6 +58,13 @@ async fn line_status_is_served_from_the_last_poll_on_repeat_requests() {
     first.assert_json(StatusCode::OK);
     second.assert_json(StatusCode::OK);
     assert_eq!(first.body, second.body);
+}
+
+#[tokio::test]
+async fn line_status_is_gzipped_for_clients_that_accept_it() {
+    let app = app_with_feed(ResponseTemplate::new(200).set_body_json(line_status_fixture())).await;
+
+    assert_gzip_matches_plain(&app, "/api/lines/status").await;
 }
 
 #[tokio::test]
