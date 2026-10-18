@@ -89,6 +89,8 @@ Next Train uses the private generic `RefreshingCache<K, V>` in `dut-upstream`. K
 
 Boards are fetched in English; station names come from the compiled network. A Traditional Chinese request is added only for special-arrangement notices. Every outbound request goes through the shared `OutboundHttpClient::fetch`, with structured start, finish, and failure logs. Cache logs cover misses, expiry, refresh, coalesced waits, stale fallback, background revalidation, and backoff.
 
+Responses that many clients share are encoded once and reused. `EncodedBody<V>` in `dut-api` holds one body's plain and maximum-level gzip bytes for the version last asked for, encoding each on the blocking pool when first requested; `EncodedBodies<K, V>` keeps one per validated key, such as a line and station. A version names everything the bytes depend on: `FetchVersion` is a snapshot's `fetched_at` and `stale`, and `BoardVersion` adds `BoardView::departed()`, because a cached board hides departed trains at each request's instant. `/api/lines` has a single constant body. Per-request headers such as `max-age` stay outside the cached bytes.
+
 <a id="polled-feeds"></a>
 
 ### Polled feeds
@@ -159,3 +161,5 @@ Proposed options are `--onesignal-app-id` / `DUT_ONESIGNAL_APP_ID` and `--onesig
 ## Deployment direction
 
 Today the service is one binary connected by in-process channels. Multiple instances each rebuild caches and poll upstreams, so upstream load scales with instance count and monitors duplicate events. Before scaling out, introduce configuration to run monitor and push in one role, with idempotency for replacement overlap. Move events to Redis or NATS only when a consumer runs in another process; serialisable event DTOs belong outside `dut-core`.
+
+The server runs its own accept loop on Hyper rather than `axum::serve`, for two limits that keep a small machine answering under load: a 30-second header read timeout, which also closes idle kept-alive connections, and a cap on open connections (`--max-connections`, default 1024; an idle connection holds about 60 KB). At the cap, new connections wait in the kernel's accept queue, so memory stays bounded and accepted requests stay fast. On Fly.io the proxy's own concurrency limit counts requests and stays below the cap, so it queues excess traffic first.

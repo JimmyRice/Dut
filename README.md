@@ -138,6 +138,7 @@ Use the remaining `Cache-Control: public, max-age=N` to schedule polling. A stal
 | Flag | Environment | Default | Meaning |
 | --- | --- | --- | --- |
 | `--bind-address <ADDRESS>` | `DUT_BIND_ADDRESS` | `127.0.0.1:3000` | IP and port; hostnames are rejected |
+| `--max-connections <COUNT>` | `DUT_MAX_CONNECTIONS` | `1024` | Connections held open at once; further ones wait to be accepted. Each idle connection holds about 60 KB |
 | `--log-level <LEVEL>` | `RUST_LOG` | `info,dut=debug,tower_http=debug` | Log filter |
 | `--log-file <PATH>` | `DUT_LOG_FILE` | None | Append a second plain-text log stream |
 | `--mock-api` | `DUT_MOCK_API` | Disabled | Enable simulation routes |
@@ -148,7 +149,7 @@ Flags override environment variables. `DUT_MOCK_API` accepts `true/false`, `1/0`
 cargo run -- --bind-address 0.0.0.0:3000 --log-level info
 ```
 
-Endpoints, timeouts, and cache policies are defaults in [config.rs](src/bootstrap/config.rs). `SIGTERM` or Ctrl-C stops accepting requests and drains in-flight work. Outbound HTTP uses environment or macOS system proxies. The macOS bypass list is not applied; set `NO_PROXY` for direct hosts. Tests explicitly connect directly to local fake upstreams.
+Endpoints, timeouts, and cache policies are defaults in [config.rs](src/bootstrap/config.rs). `SIGTERM` or Ctrl-C stops accepting requests and drains in-flight work. A connection that sends no complete request headers for 30 seconds, idle kept-alive ones included, is closed, so slow or silent clients cannot hold connections. Outbound HTTP uses environment or macOS system proxies. The macOS bypass list is not applied; set `NO_PROXY` for direct hosts. Tests explicitly connect directly to local fake upstreams.
 
 <a id="docker"></a>
 
