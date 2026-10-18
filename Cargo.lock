@@ -425,6 +425,8 @@ dependencies = [
  "dut-upstream",
  "flate2",
  "futures",
+ "hyper",
+ "hyper-util",
  "jiff",
  "mimalloc",
  "reqwest",
