@@ -108,7 +108,7 @@ GET /api/lines
 
 按内置顺序返回十条 Next Train 线路：AEL、TCL、TML、TKL、EAL、SIL、TWL、ISL、KTL、DRL。导航数据可下载一次使用，仅随部署更新。`Cache-Control: public, max-age=86400`；无业务错误。
 
-响应带弱 `ETag`，由服务版本和内容哈希组成，例如 `W/"0.5.5-eddc53094adbcfb4"`；只有内置路网或新版本改变 JSON 时才会变化。在 `If-None-Match` 中带回它，会收到空的 `304`，附带相同的 `ETag` 和 `Cache-Control`。Body 每个进程只编码一次，有纯 JSON 和最高压缩级别 gzip 两种，并附带 `Content-Length` 和 `Vary: Accept-Encoding`。
+响应带弱 `ETag`，由服务版本和内容哈希组成，例如 `W/"0.6.0-eddc53094adbcfb4"`；只有内置路网或新版本改变 JSON 时才会变化。在 `If-None-Match` 中带回它，会收到空的 `304`，附带相同的 `ETag` 和 `Cache-Control`。Body 每个进程只编码一次，有纯 JSON 和最高压缩级别 gzip 两种，并附带 `Content-Length` 和 `Vary: Accept-Encoding`。
 
 ```bash
 curl http://127.0.0.1:3000/api/lines
@@ -157,15 +157,15 @@ curl http://127.0.0.1:3000/api/lines
 使用之前响应的 `ETag` 重新验证，采集自运行中的服务：
 
 ```bash
-curl -i -H 'If-None-Match: W/"0.5.5-eddc53094adbcfb4"' http://127.0.0.1:3000/api/lines
+curl -i -H 'If-None-Match: W/"0.6.0-eddc53094adbcfb4"' http://127.0.0.1:3000/api/lines
 ```
 
 ```http
 HTTP/1.1 304 Not Modified
 cache-control: public, max-age=86400
-etag: W/"0.5.5-eddc53094adbcfb4"
-x-request-id: 4a9e23f8-8cab-4682-b59f-f6f7640166c3
-date: Sun, 18 Oct 2026 16:05:45 GMT
+etag: W/"0.6.0-eddc53094adbcfb4"
+x-request-id: c3ea5bde-0b23-475d-b903-55bda576d0fb
+date: Sun, 18 Oct 2026 16:38:06 GMT
 ```
 
 <a id="station-reference"></a>
@@ -536,15 +536,15 @@ content-length: 0
 
 第 6–13 节读取同一份内存快照，来自七个港铁 CSV。启动后立即首次轮询，之后每 24 小时一次，失败在 5 分钟后重试。全部成功才发布。读取可能等待首次轮询；请求不会触发平台获取。获取起算新鲜期 86430 秒，之后有 30 天旧数据窗口，再之后返回 `502 upstream_unavailable`。新进程没有旧快照。
 
-Local First 同步可请求 `/api/data`，与本地版本比较，仅下载变化的数据集。数据集弱 ETag 包含服务版本和内容 hash，例如 `W/"0.5.5-5987f5c9680ce780"`；原始文件仅包含字节 hash。下次发送 `If-None-Match`，未变化则返回空的 `304`，带 ETag 及缓存 header。索引本身没有 ETag。版本仅用于比较相等，不应视为时间戳或可排序版本。
+Local First 同步可请求 `/api/data`，与本地版本比较，仅下载变化的数据集。数据集弱 ETag 包含服务版本和内容 hash，例如 `W/"0.6.0-5987f5c9680ce780"`；原始文件仅包含字节 hash。下次发送 `If-None-Match`，未变化则返回空的 `304`，带 ETag 及缓存 header。索引本身没有 ETag。版本仅用于比较相等，不应视为时间戳或可排序版本。
 
 ```bash
-curl -i -H 'If-None-Match: W/"0.5.5-5987f5c9680ce780"' http://127.0.0.1:3000/api/data/fares
+curl -i -H 'If-None-Match: W/"0.6.0-5987f5c9680ce780"' http://127.0.0.1:3000/api/data/fares
 ```
 
 ```http
 HTTP/1.1 304 Not Modified
-etag: W/"0.5.5-5987f5c9680ce780"
+etag: W/"0.6.0-5987f5c9680ce780"
 cache-control: public, max-age=86000
 ```
 
@@ -582,37 +582,37 @@ curl http://127.0.0.1:3000/api/data
     {
       "name": "stations",
       "path": "/api/data/stations",
-      "revision": "0.5.5-0d1201f5804cd4cd",
+      "revision": "0.6.0-0d1201f5804cd4cd",
       "updated_at": "2023-11-21T18:09:07+08:00"
     },
     {
       "name": "fares",
       "path": "/api/data/fares",
-      "revision": "0.5.5-5987f5c9680ce780",
+      "revision": "0.6.0-5987f5c9680ce780",
       "updated_at": "2026-04-03T01:02:50+08:00"
     },
     {
       "name": "airport-express-fares",
       "path": "/api/data/airport-express-fares",
-      "revision": "0.5.5-545393302ce4c18f",
+      "revision": "0.6.0-545393302ce4c18f",
       "updated_at": "2025-06-22T01:05:16+08:00"
     },
     {
       "name": "light-rail",
       "path": "/api/data/light-rail",
-      "revision": "0.5.5-97a676332b659216",
+      "revision": "0.6.0-97a676332b659216",
       "updated_at": "2026-07-05T00:58:02+08:00"
     },
     {
       "name": "light-rail-fares",
       "path": "/api/data/light-rail-fares",
-      "revision": "0.5.5-e9deb534253c3bde",
+      "revision": "0.6.0-e9deb534253c3bde",
       "updated_at": "2024-06-30T01:39:03+08:00"
     },
     {
       "name": "accessibility",
       "path": "/api/data/accessibility",
-      "revision": "0.5.5-b199444f08da98bf",
+      "revision": "0.6.0-b199444f08da98bf",
       "updated_at": "2023-06-25T02:28:09+08:00"
     }
   ],
